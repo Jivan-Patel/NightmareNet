@@ -143,7 +143,7 @@ class BM25:
         for idx, doc in enumerate(self.corpus):
             score = 0
             doc_len = self.doc_lengths[idx]
-            term_freqs = defaultdict(int)
+            term_freqs: dict[str, int] = defaultdict(int)
             for word in doc:
                 term_freqs[word] += 1
 
@@ -211,7 +211,7 @@ def detect_domain(query):
     }
 
     scores = {domain: sum(1 for kw in keywords if kw in query_lower) for domain, keywords in domain_keywords.items()}
-    best = max(scores, key=scores.get)
+    best = max(scores, key=lambda k: scores[k])
     return best if scores[best] > 0 else "style"
 
 
@@ -224,7 +224,7 @@ def search(query, domain=None, max_results=MAX_RESULTS):
         return {"error": f"Unknown domain: {domain}", "domain": domain}
 
     config = CSV_CONFIG[domain]
-    filepath = DATA_DIR / config["file"]
+    filepath = DATA_DIR / str(config["file"])
 
     if not filepath.exists():
         return {"error": f"File not found: {filepath}", "domain": domain}

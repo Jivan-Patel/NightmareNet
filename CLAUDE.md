@@ -69,6 +69,9 @@ cd frontend && npm run build         # Production build
 3. **Optional deps are optional** — guard imports with try/except: `accelerate`, `wandb`, `tensorboard`
 4. **FastAPI Body singletons** — `_DISTORTION_BODY` and `_ROBUSTNESS_BODY` are module-level to avoid B008
 5. **CORS** — configured via `NIGHTMARENET_CORS_ORIGINS` env var (default: `*`)
+6. **Health** — optional `NIGHTMARENET_HEALTH_TEST_COUNT=1` enables subprocess `pytest --collect-only` in `/api/v1/health` (off by default; avoid in production)
+7. **Pipeline registry** — `NIGHTMARENET_MAX_PIPELINE_RUNNERS` caps in-memory runners (default 64); completed runs are evicted first
+8. **Next.js proxy** — `frontend/next.config.ts` uses `NEXT_API_REWRITE_URL` for where `/api/`* rewrites; see `frontend/README.md`
 
 ## Testing Requirements
 
@@ -80,12 +83,14 @@ cd frontend && npm run build         # Production build
 
 ## API Endpoints
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/v1/health` | Health check (status, version, tests) |
-| POST | `/api/v1/generate/dream` | Dream distortion `{text, strength, seed}` |
-| POST | `/api/v1/generate/nightmare` | Nightmare distortion `{text, strength, seed}` |
-| POST | `/api/v1/evaluate/robustness` | Multi-strength eval `{text, strengths[]}` |
+
+| Method | Path                          | Purpose                                       |
+| ------ | ----------------------------- | --------------------------------------------- |
+| GET    | `/api/v1/health`              | Health check (status, version, tests)         |
+| POST   | `/api/v1/generate/dream`      | Dream distortion `{text, strength, seed}`     |
+| POST   | `/api/v1/generate/nightmare`  | Nightmare distortion `{text, strength, seed}` |
+| POST   | `/api/v1/evaluate/robustness` | Multi-strength eval `{text, strengths[]}`     |
+
 
 ## Frontend Notes
 
@@ -106,3 +111,4 @@ cd frontend && npm run build         # Production build
 - `Accelerator` import is optional — guarded with `Accelerator: Any = None` fallback
 - `evaluator._log_eval()` guards against `self.tracker is None`
 - Rate limiting on API uses `slowapi` — 10 req/min on generate, 5 req/min on evaluate
+
