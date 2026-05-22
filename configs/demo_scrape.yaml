@@ -1,0 +1,80 @@
+# Minimal configuration for the demo pipeline.
+# Scrapes a few Wikipedia pages and runs a quick 1-cycle training.
+
+model:
+  name: "distilbert-base-uncased"
+  type: "masked_lm"
+  max_length: 128
+  device: "auto"
+
+dataset:
+  text_column: "text"
+  max_samples: 200
+  streaming: false
+
+training:
+  wake_epochs: 1
+  dream_epochs: 1
+  nightmare_epochs: 1
+  num_cycles: 1
+  batch_size: 4
+  learning_rate: 5.0e-5
+  nightmare_lr_multiplier: 2.0
+  weight_decay: 0.01
+  warmup_steps: 10
+  gradient_accumulation_steps: 2
+  max_grad_norm: 1.0
+  use_amp: false
+  gradient_checkpointing: false
+  early_stopping: false
+  distributed: false
+  save_every_phase: false
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+
+distortion:
+  dream_strength: 0.25
+  nightmare_strength: 0.8
+  text:
+    char_swap: 0.3
+    char_insert: 0.2
+    char_delete: 0.2
+    keyboard_typo: 0.3
+    word_shuffle: 0.2
+    token_mask: 0.3
+  semantic:
+    synonym_replace: 0.4
+    negation_inject: 0.3
+    topic_splice: 0.3
+  adversarial:
+    contradiction: 0.3
+    ambiguity: 0.3
+    cross_domain: 0.2
+    misleading_context: 0.2
+    learned: 0.0
+    learned_model: "distilbert-base-uncased"
+
+compression:
+  pruning_ratio: 0.1
+  pruning_method: "magnitude"
+  finetune_after_prune: false
+
+evaluation:
+  metrics:
+    - "recall"
+    - "hallucination"
+
+tracking:
+  backend: none
+  project: nightmarenet-demo
+  log_dir: logs/demo_runs
+  output_dir: "results"
+  output_format: "json"
+
+seed: 42
+
+# URLs to scrape for the demo pipeline
+scrape_urls:
+  - "https://en.wikipedia.org/wiki/Machine_learning"
+  - "https://en.wikipedia.org/wiki/Neural_network_(machine_learning)"
+  - "https://en.wikipedia.org/wiki/Transformer_(deep_learning_architecture)"
