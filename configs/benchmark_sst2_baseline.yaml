@@ -1,0 +1,39 @@
+# Baseline: wake-only fine-tuning (no dream/nightmare/compress phases)
+# Same data/model as benchmark_sst2.yaml for apples-to-apples comparison
+
+model:
+  name: distilbert-base-uncased
+  type: seq_classification
+  max_length: 128
+  num_labels: 2
+
+dataset:
+  name: glue
+  config: sst2
+  text_column: sentence
+  label_column: label
+  max_samples: 2000
+
+training:
+  wake_epochs: 4
+  dream_epochs: 0
+  nightmare_epochs: 0
+  compress_epochs: 0
+  num_cycles: 1
+  batch_size: 8
+  learning_rate: 3.0e-5
+  device: cpu
+
+distortion:
+  dream_strength: 0.25
+  nightmare_strength: 0.75
+
+compression:
+  pruning_ratio: 0.0
+
+evaluation:
+  strengths: [0.1, 0.3, 0.5, 0.7, 0.9]
+  seed: 42
+
+tracking:
+  enabled: false

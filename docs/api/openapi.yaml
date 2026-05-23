@@ -1,0 +1,332 @@
+openapi: 3.1.0
+info:
+  title: NightmareNet API
+  version: 0.2.0
+  description: |
+    REST API for dream/nightmare distortion, robustness evaluation,
+    and end-to-end training pipelines. Hosted platform endpoints require Bearer auth.
+  license:
+    name: MIT
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development
+
+tags:
+  - name: health
+  - name: distortions
+  - name: evaluation
+  - name: pipeline
+  - name: auth
+  - name: experiments
+  - name: compliance
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Health check
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/generate/dream:
+    post:
+      tags: [distortions]
+      operationId: generateDream
+      summary: Generate dream-distorted text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistortionRequest"
+      responses:
+        "200":
+          description: Distorted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistortionResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/generate/nightmare:
+    post:
+      tags: [distortions]
+      operationId: generateNightmare
+      summary: Generate nightmare-distorted text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistortionRequest"
+      responses:
+        "200":
+          description: Distorted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistortionResponse"
+
+  /api/v1/evaluate/robustness:
+    post:
+      tags: [evaluation]
+      operationId: evaluateRobustness
+      summary: Multi-strength robustness evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RobustnessRequest"
+      responses:
+        "200":
+          description: Robustness scores per strength
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RobustnessResponse"
+
+  /api/v1/pipeline/create:
+    post:
+      tags: [pipeline]
+      operationId: createPipeline
+      summary: Start a training pipeline run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineCreateRequest"
+      responses:
+        "200":
+          description: Pipeline started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStatusResponse"
+
+  /api/v1/pipeline/{run_id}/status:
+    get:
+      tags: [pipeline]
+      operationId: getPipelineStatus
+      summary: Poll pipeline status and metrics
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/pipeline/{run_id}/cancel:
+    post:
+      tags: [pipeline]
+      operationId: cancelPipeline
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Cancellation requested
+
+  /api/v1/pipeline/{run_id}/report:
+    get:
+      tags: [pipeline]
+      operationId: getPipelineReport
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Evaluation report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineReportResponse"
+
+  /api/v1/experiments:
+    get:
+      tags: [experiments]
+      operationId: listExperiments
+      summary: List experiments (hosted)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated experiment list
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/compliance/export:
+    post:
+      tags: [compliance]
+      operationId: exportComplianceReport
+      summary: Export EU AI Act robustness report (hosted)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Report artifact URL or JSON payload
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+        tests_passing:
+          type: integer
+          nullable: true
+
+    DistortionRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+        strength:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.3
+        seed:
+          type: integer
+          nullable: true
+
+    DistortionResponse:
+      type: object
+      properties:
+        original:
+          type: string
+        distorted:
+          type: string
+        strength:
+          type: number
+        phase:
+          type: string
+          enum: [dream, nightmare]
+
+    RobustnessRequest:
+      type: object
+      required: [text, strengths]
+      properties:
+        text:
+          type: string
+        strengths:
+          type: array
+          items:
+            type: number
+            minimum: 0
+            maximum: 1
+
+    RobustnessResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              strength:
+                type: number
+              score:
+                type: number
+
+    PipelineCreateRequest:
+      type: object
+      properties:
+        source_type:
+          type: string
+          enum: [url, huggingface, text, file]
+        model_name:
+          type: string
+        num_cycles:
+          type: integer
+          minimum: 1
+          default: 1
+
+    PipelineStatusResponse:
+      type: object
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+        current_phase:
+          type: string
+        progress_pct:
+          type: number
+        loss:
+          type: number
+          nullable: true
+
+    PipelineReportResponse:
+      type: object
+      properties:
+        run_id:
+          type: string
+        report_markdown:
+          type: string
+        comparison:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+    Unauthorized:
+      description: Authentication required

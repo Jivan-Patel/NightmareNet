@@ -2,7 +2,26 @@
 
 **Autonomous AI Self-Improvement Platform**
 
-> *"We're building the first platform where AI systems don't just learn—they continuously evolve through structured self-improvement cycles inspired by how humans dream and forget."*
+[![Tests](https://img.shields.io/badge/tests-288%2B%20passing-brightgreen)](#running-tests)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#installation)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
+[![Phases](https://img.shields.io/badge/training-Wake%20%E2%86%92%20Dream%20%E2%86%92%20Nightmare%20%E2%86%92%20Compress-blueviolet)](#training-phases)
+
+> *Models that don't just learn—they **harden** through sleep-inspired cycles: mild dream augmentation, adversarial nightmares, and synaptic compression.*
+
+---
+
+## Feature Surface
+
+| Area | Capabilities |
+|------|----------------|
+| **Distortion API** | Dream + nightmare text generation, multi-strength robustness scoring |
+| **Training pipeline** | 4-phase cycle, YAML configs, AMP, DDP, early stopping |
+| **Pipeline orchestration** | Ingest (URL/file/HF/text), scrape, background runner, cancel/report |
+| **CLI** | `nightmarenet train`, `distort`, `evaluate`, `benchmark` |
+| **Dashboard** | PipelineLab wizard, Playground, Resilience Lab, live health matrix |
+| **Plugins** | Custom distortion engines via registry |
+| **Compliance (roadmap)** | EU AI Act Article 15 export, audit trail |
 
 ---
 

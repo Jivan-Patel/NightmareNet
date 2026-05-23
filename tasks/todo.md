@@ -97,3 +97,23 @@ All 18 improvement suggestions verified against actual code. 3 subagents used fo
 |---|-----------|-------|
 | 19 | Distortion strength auto-tuning | No adaptive mechanism for dream/nightmare strengths |
 | 20 | Caching distorted datasets | No content-hash caching; regenerated each run |
+
+---
+
+## Strategic Plan Execution (2026-05-23)
+
+### Completed
+- [x] Environment: gitnexus index (2280 nodes), code-review-graph build, `.env` + gitignore
+- [x] Stabilize WIP: 288+ tests, ruff clean, frontend build, 4 atomic commits
+- [x] Architecture: `nightmarenet_server/` package, CLI (`nightmarenet`), distortion registry, training callbacks
+- [x] Docs: PRD, TRD, database schema, paper outline, OpenAPI spec, benchmark v1 protocol
+- [x] Benchmark configs: `configs/benchmark_sst2.yaml` + baseline
+- [x] CONTRIBUTING.md, CI frontend build job
+- [x] UI primitives: `Button`, `Card` in `frontend/src/components/ui/`
+
+### In Progress / Next
+- [ ] Run full benchmark on GPU (Python 3.12 + cu121 venv)
+- [ ] Wire PipelineLab to `Button`/`Card` + real-time WebSocket progress
+- [ ] Hosted platform: SQLAlchemy models + auth routes
+- [ ] README feature-dense rewrite (DarkLead-style panel catalog)
+- [ ] Colab quickstart notebooks (3)
