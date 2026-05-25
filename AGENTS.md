@@ -51,9 +51,9 @@ Configured in `.claude/settings.json`:
 - Linear/Vercel/Stripe-tier UI polish; feature-dense, information-heavy panels inspired by Linear/Vercel/DarkLead, Arc, Notion, Raycast — not minimal or sparse.
 - Plan-mode-first for any non-trivial task (3+ steps or architectural decisions); generate full PRD/TRD/architecture/UX flows/API contracts/sprint plans as part of planning, not just task lists; re-plan if anything goes sideways.
 - Track work via `tasks/todo.md` (checkable items) and corrections via `tasks/lessons.md` (self-improvement loop, append after every user correction).
-- Verification before completion: tests, lint, type-check, UX validation, architecture integrity — never claim done without staff-engineer-level proof.
+- Verification before completion + autonomous bug fixing: tests, lint, type-check, UX validation, architecture integrity; investigate, trace root cause, fix, and validate without hand-holding; never claim done without staff-engineer-level proof and zero tolerance for shortcuts, lazy implementations, or fake completion.
 - Demand elegance: pause and ask "Is there a more elegant solution?" before non-trivial implementations; reject hacky, repetitive, brittle, or tightly-coupled code.
-- Autonomous bug fixing: investigate, trace root cause, fix, validate — no hand-holding required.
+- Git discipline: Conventional Commits, atomic per logical change; commit and push frequently to grow GitHub contribution history (clean atomic history naturally drives up commit count) — the user explicitly asks for this cadence.
 - AI-native thinking: every feature considers AI copilots, semantic search, intelligent automation, conversational workflows; integrate Azure OpenAI, OpenAI APIs, Anthropic Claude, RAG pipelines, and vector databases as needed.
 - Performance-first: sub-100ms UI, sub-500ms API, CUDA acceleration, mixed precision, quantization for ML; code splitting and lazy loading on the frontend.
 - Security + DevOps: RBAC, secrets in vaults, rate limiting, audit logs, least-privilege, compliance readiness; CI/CD via GitHub Actions, Docker, Vercel/Railway, PostgreSQL/Redis, observability, rollback strategies, cost optimization.
@@ -62,23 +62,22 @@ Configured in `.claude/settings.json`:
 ## Learned Workspace Facts
 
 - Next.js client uses same-origin `/api`; `frontend/next.config.ts` rewrites to `NEXT_API_REWRITE_URL` (backend base, no trailing slash). If `NEXT_PUBLIC_API_URL` is set, the browser calls that origin directly and rewrites are not used (configure API CORS for split-host).
-- Health (`/api/v1/health`): `NIGHTMARENET_HEALTH_TEST_COUNT` optionally runs a subprocess `pytest --collect-only` check; leave unset/off in production.
-- Pipeline runner registry: `NIGHTMARENET_MAX_PIPELINE_RUNNERS` caps in-memory runners (default 64); when over cap, completed runs are evicted first.
-- `docs/solutions/nightmarenet-research-synthesis.md` is the research synthesis artifact; full deep-research workflows expect **parallel-cli** (or equivalent) available.
-- Strategic execution plan lives at `.cursor/plans/nightmarenet_strategic_research_synthesis_9589248a.plan.md`; when executing it, do not edit the plan file itself.
-- Dev GPU: RTX 3050 Ti (4 GB VRAM). DistilBERT/DistilGPT-2 fit without issues; GPT-2 (124M) needs gradient checkpointing + FP16, batch size 4-8 max.
-- `C:\Users\aditj\New Projects\TR-104-DarkLead-main` is the design inspiration reference for feature-dense 20+ panel dashboards.
-- Strategic direction: hybrid open-source core (Apache 2.0) + hosted platform (paid). OSS = distortion engines, training loop, CLI. Paid = orchestration, compliance, multi-GPU, team features.
-- Pricing model: Community $0 (full OSS, single-GPU, self-hosted) / Pro $49/seat/mo + compute (cloud orchestration, multi-GPU, teams, ~1000 cycles/mo) / Enterprise $50K-$100K/yr (SSO, audit, compliance, on-prem, SLA, custom engines).
+- Health (`/api/v1/health`) optionally runs `pytest --collect-only` via `NIGHTMARENET_HEALTH_TEST_COUNT` (leave unset in production); pipeline runner registry capped by `NIGHTMARENET_MAX_PIPELINE_RUNNERS` (default 64, completed runs evicted first when over cap).
+- Repo structure: OSS core in `nightmarenet/` (Apache 2.0), hosted platform in `nightmarenet_server/` (OAuth GitHub/Google + API keys, Celery workers, WebSocket fan-out, Alembic migrations), frontend in `frontend/` (Next.js 14 + Tailwind v4 + Framer Motion).
+- Dev GPU: RTX 3050 Ti (4 GB VRAM, CC 8.6); Python 3.12 + CUDA 12.1 venv at `.venv312/`. DistilBERT/DistilGPT-2 fit without issues; GPT-2 (124M) needs gradient checkpointing + FP16, batch size 4-8 max.
+- 20-panel feature-dense dashboard lives at `/dashboard`, with `frontend/src/components/dashboard/` (AppShell, Cmd+K palette, 12 panels) and `frontend/src/components/ui/` (9 primitives); design inspiration is `C:\Users\aditj\New Projects\TR-104-DarkLead-main`.
+- Strategic direction: hybrid open-source core (Apache 2.0) + hosted platform (paid). OSS = distortion engines, training loop, CLI. Paid = orchestration, compliance, multi-GPU, team features. Pricing: Community $0 (single-GPU, self-hosted) / Pro $49/seat/mo + compute (~1000 cycles/mo) / Enterprise $50K-$100K/yr (SSO, audit, compliance, on-prem, SLA, custom engines).
+- Strategic execution plan at `.cursor/plans/nightmarenet_strategic_research_synthesis_9589248a.plan.md` (do not edit while executing); research synthesis artifact at `docs/solutions/nightmarenet-research-synthesis.md`; full deep-research workflows expect **parallel-cli** (or equivalent) available.
 - Cyberpunk-neural design system: Void Black (#020617) backgrounds, Indigo Dream (#818CF8), Red Nightmare (#EF4444), Cyan Neural (#06B6D4), Amber Compress (#F59E0B); Inter (UI) + JetBrains Mono (code/metrics); Framer Motion spring-based 60fps motion.
-- Academic positioning: closest prior art is PAD (Deperrois 2022, eLife) for sleep-inspired training; NightmareNet differentiates by targeting adversarial robustness (not representation learning) with integrated compression phase.
+- Academic positioning: closest prior art is PAD (Deperrois 2022, eLife) for sleep-inspired training; NightmareNet differentiates by targeting adversarial robustness (not representation learning) with integrated compression phase. Benchmark v1 headline: +14.49% relative robustness improvement on SST-2 (DistilBERT, 500 train / 200 val, seed 42), documented in `docs/research/benchmark-v1.md` and `docs/research/paper-draft.md`.
 - Target market timing: EU AI Act Article 15 (robustness mandate) fully applicable August 2, 2026.
-- Continual-learning state lives at the cross-workspace canonical index `C:\Users\aditj\New Projects\AtomicPulse\.cursor\hooks\state\continual-learning-index.json` (reused by NightmareNet rather than maintaining a per-repo index).
+- CI integration: composite GitHub Action at `.github/actions/nightmarenet-robustness-check/` invokes `nightmarenet evaluate --json` to gate PRs on a robustness threshold; active development branch is `Frontend-with-Updated-backend`.
+- 12 Cursor skills are committed at `.cursor/skills/` (auto-invoke; `.cursor/skills/` is exempted from the `.cursor/` gitignore). Continual-learning index lives at `.cursor/hooks/state/continual-learning-index.json` (NightmareNet-local; supersedes the prior AtomicPulse cross-workspace path).
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **NightmareNet** (2280 symbols, 4080 relationships, 78 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **NightmareNet** (4310 symbols, 7685 relationships, 161 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
