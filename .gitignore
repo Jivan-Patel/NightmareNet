@@ -50,3 +50,5 @@ htmlcov/
 
 # Benchmark / experiment outputs
 results/
+
+.venv312-install.log
