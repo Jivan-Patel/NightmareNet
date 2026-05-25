@@ -17,7 +17,10 @@ venv/
 # Environment / IDEs
 .env
 .idea/
-.cursor/
+.cursor/hooks/
+.cursor/plans/
+.cursor/cache/
+.cursor/state/
 .windsurf/
 .trae/
 .gemini/
