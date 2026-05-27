@@ -232,3 +232,11 @@ export const IconWand = (p: IconProps) => (
     <path d="M17.8 6.2L19 5" />
   </svg>
 );
+
+export const IconKebab = (p: IconProps) => (
+  <svg {...base({ ...p, size: p.size ?? 14 })}>
+    <circle cx="12" cy="5.5" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="18.5" r="1.2" fill="currentColor" stroke="none" />
+  </svg>
+);
