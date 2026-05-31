@@ -304,7 +304,7 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
 
         if body.estimate_only:
             try:
-                estimate = await asyncio.get_event_loop().run_in_executor(
+                estimate = await asyncio.get_running_loop().run_in_executor(
                     _executor, lambda: optimizer.estimate_cost(dataset, body.column_mapping)
                 )
             except Exception as exc:
@@ -328,7 +328,7 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
 
         try:
             result = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
+                asyncio.get_running_loop().run_in_executor(
                     _executor,
                     lambda: optimizer.optimize_dataset(
                         dataset, body.column_mapping, max_rows=len(body.texts)
@@ -411,7 +411,7 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
         run = OptimizationRun(run_id=run_id, text_count=len(body.texts))
         _registry[run_id] = run
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         loop.run_in_executor(
             _executor,
             _run_optimization_sync,
@@ -458,7 +458,7 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
         run = OptimizationRun(run_id=run_id, text_count=len(body.texts))
         _registry[run_id] = run
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         loop.run_in_executor(
             _executor,
             _run_optimization_sync,

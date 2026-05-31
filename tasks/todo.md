@@ -116,6 +116,15 @@ All 18 improvement suggestions verified against actual code. 3 subagents used fo
 - [x] Benchmark runner: `scripts/run_benchmark.py` (`--quick` distortion smoke)
 
 ### In Progress / Next
+- [x] Dark mode toggle with system preference detection
+- [x] Custom NightmareNet SVG logo component
+- [x] Dashboard navigation from landing page (Hero, Navbar, Footer)
+- [x] GSAP animations (floating orbs in Hero)
+- [x] Light mode CSS overrides (glass, cards, navbar, terminal)
+- [x] Fix Node.js process spawning (removed stray lockfile from user home)
+- [x] Fix .env loading (added python-dotenv to app.py)
+- [x] Fix npm vulnerabilities (upgraded Next.js to 16.2.6)
+- [x] Merge to main + push (GitHub contributions now count)
 - [ ] Run full benchmark on GPU (Python 3.12 + cu121 venv)
 - [ ] WebSocket live progress (replace 3s polling in PipelineLab)
 - [ ] Hosted platform: FastAPI routes + Celery workers wired to models

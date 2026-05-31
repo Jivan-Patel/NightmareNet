@@ -81,12 +81,16 @@ Configured in `.claude/settings.json`:
 - Security + DevOps: RBAC, secrets in vaults, rate limiting, audit logs, least-privilege, compliance readiness; CI/CD via GitHub Actions, Docker, Vercel/Railway, PostgreSQL/Redis, observability, rollback strategies, cost optimization.
 - Spec-driven + repository intelligence: GitHub Spec Kit structured specs/ADRs/validation pipelines; use GitNexus for impact analysis before editing any symbol, and complement with `graphify` and `code-review-graph` for architecture and PR-review intelligence.
 - Design skills installed: `npx impeccable skills install` (pbakaus/impeccable), `npx skills add Leonxlnx/taste-skill --skill "design-taste-frontend"`, `npx skills add emilkowalski/skill`. Skills install to `.cursor/skills/` via the `npx skills` CLI.
+- **Stray lockfile trap**: If Next.js/Turbopack spawns excessive Node.js processes, check parent directories (up to user home `C:\Users\aditj\`) for stray `package.json`/`package-lock.json`/`node_modules`. Delete them — Turbopack walks up looking for workspace root.
+- **Python .env loading**: uvicorn does NOT auto-load `.env` files. Always use `python-dotenv` with `load_dotenv()` at app entrypoint (guarded by `try/except ImportError`).
+- **npm audit fix --force is dangerous**: it can DOWNGRADE packages and introduce MORE vulnerabilities. Prefer `npm install <pkg>@latest` for targeted fixes.
+- GitHub contributions only count on the default branch (`main`); work on feature branches must be merged + pushed to main for profile activity.
 
 ## Learned Workspace Facts
 
 - Next.js client uses same-origin `/api`; `frontend/next.config.ts` rewrites to `NEXT_API_REWRITE_URL` (backend base, no trailing slash). If `NEXT_PUBLIC_API_URL` is set, the browser calls that origin directly and rewrites are not used (configure API CORS for split-host).
 - Health (`/api/v1/health`) optionally runs `pytest --collect-only` via `NIGHTMARENET_HEALTH_TEST_COUNT` (leave unset in production); pipeline runner registry capped by `NIGHTMARENET_MAX_PIPELINE_RUNNERS` (default 64, completed runs evicted first when over cap).
-- Repo structure: OSS core in `nightmarenet/` (Apache 2.0), hosted platform in `nightmarenet_server/` (OAuth GitHub/Google + API keys, Celery workers, WebSocket fan-out, Alembic migrations), frontend in `frontend/` (Next.js 14 + Tailwind v4 + Framer Motion).
+- Repo structure: OSS core in `nightmarenet/` (Apache 2.0), hosted platform in `nightmarenet_server/` (OAuth GitHub/Google + API keys, Celery workers, WebSocket fan-out, Alembic migrations), frontend in `frontend/` (Next.js 14 + Tailwind v4 + Framer Motion + GSAP).
 - Dev GPU: RTX 3050 Ti (4 GB VRAM, CC 8.6); Python 3.12 + CUDA 12.1 venv at `.venv312/`. DistilBERT/DistilGPT-2 fit without issues; GPT-2 (124M) needs gradient checkpointing + FP16, batch size 4-8 max.
 - 20-panel feature-dense dashboard lives at `/dashboard`, with `frontend/src/components/dashboard/` (AppShell, Cmd+K palette, 12 panels) and `frontend/src/components/ui/` (9 primitives); design inspiration is `C:\Users\aditj\New Projects\TR-104-DarkLead-main`.
 - Strategic direction: hybrid open-source core (Apache 2.0) + hosted platform (paid). OSS = distortion engines, training loop, CLI. Paid = orchestration, compliance, multi-GPU, team features. Pricing: Community $0 (single-GPU, self-hosted) / Pro $49/seat/mo + compute (~1000 cycles/mo) / Enterprise $50K-$100K/yr (SSO, audit, compliance, on-prem, SLA, custom engines).

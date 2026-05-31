@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import signal
+import threading
 from typing import Any, Callable, Optional
 
 import torch
@@ -282,8 +283,10 @@ class Trainer:
                 val_dataloader = prepared[5]
             self.device = self.dist_ctx.device
 
-        prev_handler = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, self._handle_interrupt)
+        prev_handler = None
+        if threading.current_thread() is threading.main_thread():
+            prev_handler = signal.getsignal(signal.SIGINT)
+            signal.signal(signal.SIGINT, self._handle_interrupt)
 
         current_cycle = 0
         current_phase = "init"
@@ -422,7 +425,8 @@ class Trainer:
             if self._interrupted:
                 self._save_checkpoint(current_cycle, current_phase)
                 logger.info("Training interrupted, checkpoint saved.")
-            signal.signal(signal.SIGINT, prev_handler)
+            if prev_handler is not None:
+                signal.signal(signal.SIGINT, prev_handler)
 
         # Save final model and history
         final_path = os.path.join(self.checkpoint_dir, "final")

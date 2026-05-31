@@ -47,6 +47,8 @@ coverage/
 .mypy_cache/
 .coverage
 htmlcov/
+mypy_output.txt
+pyright_output.txt
 
 # Benchmark / experiment outputs
 results/
@@ -54,3 +56,14 @@ results/
 .venv312-install.log
 
 gpu-bench.log
+
+# Repo-level Node.js (only frontend/ should have these)
+/package.json
+/package-lock.json
+/node_modules/
+
+# Junk / transient files
+cursor_general_chat_introduction.md
+cloned-bedrock-vscode-chat/
+plan-nightmareNet.prompt.md
+.agents/

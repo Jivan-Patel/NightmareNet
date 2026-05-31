@@ -110,7 +110,7 @@ cd frontend && npm run build         # Production build
 
 - `Accelerator` import is optional — guarded with `Accelerator: Any = None` fallback
 - `evaluator._log_eval()` guards against `self.tracker is None`
-- Rate limiting on API uses `slowapi` — 10 req/min on generate, 5 req/min on evaluate
+- Rate limiting on API uses `slowapi` — 60 req/min on generate, 10 req/min on evaluate
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

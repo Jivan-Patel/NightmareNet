@@ -47,7 +47,7 @@ SYSTEM_PROMPT = (
     "the 4-phase Wake/Dream/Nightmare/Compress training cycle, and model "
     "hardening. You have deep knowledge of:\n"
     "- Distortion engines (character, word, semantic, adversarial, learned-attention)\n"
-    "- The +13.64% relative robustness improvement benchmark (SST-2, DistilBERT, seed 42)\n"
+    "- The +14.49% relative robustness improvement benchmark (SST-2, DistilBERT, seed 42)\n"
     "- Pipeline lifecycle: ingest → optimize (Adaption Labs) → prepare → train → evaluate\n"
     "- Supported configs: wake_epochs, dream/nightmare strength, compression ratio, batch size\n"
     "- Hardware constraints: RTX 3050 Ti 4GB, FP16 AMP, gradient checkpointing, batch 4-16\n"
@@ -386,7 +386,10 @@ def _build_user_prompt(
     try:
         import pathlib
 
-        bench_path = pathlib.Path("results/gpu_benchmark.json")
+        bench_base = pathlib.Path(
+            os.environ.get("NIGHTMARENET_RESULTS_DIR", "results")
+        )
+        bench_path = bench_base / "gpu_benchmark.json"
         if bench_path.exists():
             bench = json.loads(bench_path.read_text(encoding="utf-8"))
             comparison = bench.get("comparison", {})
@@ -410,11 +413,11 @@ def _build_user_prompt(
 
     # Auto-inject pipeline runner state
     try:
-        from nightmarenet.pipeline_runner import get_runner_registry
+        from nightmarenet.pipeline_runner import list_runners
 
-        registry = get_runner_registry()
+        runners = list_runners()
         active = [
-            r for r in registry.values() if r.get("status") in ("running", "preparing")
+            r for r in runners if r.get("status") in ("running", "preparing")
         ]
         if active:
             ctx["active_runs"] = len(active)

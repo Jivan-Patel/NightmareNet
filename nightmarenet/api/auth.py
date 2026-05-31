@@ -1,7 +1,5 @@
 """API key authentication middleware for NightmareNet."""
 
-from __future__ import annotations
-
 import hmac
 import logging
 import os

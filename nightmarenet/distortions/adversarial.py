@@ -249,6 +249,9 @@ def inject_misleading_context(text, strength=0.3) -> str:
 def construct_adversarial_prompt(text, strength=0.3) -> str:
     """Create a structured adversarial prompt with misleading instructions.
 
+    NOTE: This is an opt-in utility not included in the default adversarial
+    pipeline. Call directly when constructing custom adversarial challenges.
+
     Combines multiple adversarial techniques into a single challenging prompt.
 
     Args:

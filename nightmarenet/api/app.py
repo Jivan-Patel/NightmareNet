@@ -10,10 +10,15 @@ Usage:
 
 import logging
 import os
-import random
 import subprocess
 import time
 from typing import Any, Optional
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from nightmarenet import __version__
 
@@ -49,9 +54,6 @@ try:
         TrainingPhasePreview,
         UploadResponse,
     )
-    from nightmarenet.distortions.adversarial import apply_adversarial_distortions
-    from nightmarenet.distortions.semantic import apply_semantic_distortions
-    from nightmarenet.distortions.text import apply_text_distortions
 except ImportError as e:
     raise ImportError(
         "FastAPI dependencies not installed. Install with: pip install nightmarenet[api]"
@@ -121,79 +123,12 @@ from nightmarenet.api.data_optimize import register_data_optimize_routes  # noqa
 register_data_optimize_routes(app, limiter)
 
 
-def _apply_dream_distortions(
-    text: str,
-    strength: float,
-    config: Optional[dict[str, Any]] = None,
-    seed: Optional[int] = None,
-) -> str:
-    """Apply mild dream distortions (text + semantic).
-
-    Args:
-        text: Input text.
-        strength: Distortion strength in [0, 1].
-        config: Optional nested config with 'text'/'semantic' sub-keys.
-        seed: Optional seed for deterministic output.
-
-    Returns:
-        Dream-distorted text.
-    """
-    if seed is not None:
-        random.seed(seed)
-    text_config = config.get("text") if config else None
-    semantic_config = config.get("semantic") if config else None
-    result = apply_text_distortions(text, strength=strength, config=text_config)
-    result = apply_semantic_distortions(result, strength=strength, config=semantic_config)
-    return result
-
-
-def _apply_nightmare_distortions(
-    text: str,
-    strength: float,
-    config: Optional[dict[str, Any]] = None,
-    seed: Optional[int] = None,
-) -> str:
-    """Apply aggressive nightmare distortions (text + semantic + adversarial).
-
-    Args:
-        text: Input text.
-        strength: Distortion strength in [0, 1].
-        config: Optional nested config with 'text'/'semantic'/'adversarial' sub-keys.
-        seed: Optional seed for deterministic output.
-
-    Returns:
-        Nightmare-distorted text.
-    """
-    if seed is not None:
-        random.seed(seed)
-    text_config = config.get("text") if config else None
-    semantic_config = config.get("semantic") if config else None
-    adversarial_config = config.get("adversarial") if config else None
-
-    # Enable learned adversarial distortions at higher strengths for better
-    # nightmare quality — the MLM-based generator creates more challenging
-    # training data by targeting high-importance tokens.
-    if adversarial_config is None and strength >= 0.5:
-        adversarial_config = {
-            "contradiction": 0.3,
-            "ambiguity": 0.3,
-            "cross_domain": 0.2,
-            "misleading_context": 0.2,
-            "learned": min(strength, 0.4),
-        }
-
-    result = apply_text_distortions(text, strength=strength, config=text_config)
-    result = apply_semantic_distortions(
-        result, strength=strength, config=semantic_config
-    )
-    result = apply_adversarial_distortions(
-        result, strength=strength, config=adversarial_config
-    )
-    return result
+from nightmarenet.distortions.dream import distort as _apply_dream_distortions  # noqa: E402
+from nightmarenet.distortions.nightmare import distort as _apply_nightmare_distortions  # noqa: E402
 
 
 def _char_similarity(a: str, b: str) -> float:
-    """Compute character-level similarity between two strings."""
+    """Compute character-level similarity (position-dependent match ratio)."""
     if not a and not b:
         return 1.0
     if not a or not b:

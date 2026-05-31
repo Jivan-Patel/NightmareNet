@@ -2,7 +2,7 @@
 
 Analyzes a training configuration plus optional last-run metrics and returns
 actionable hyperparameter improvement suggestions. Supports multi-backend
-failover: Bedrock → Azure OpenAI → Heuristic.
+failover: Azure OpenAI → Heuristic.
 
 Features:
 - In-memory TTL cache (60s) to avoid duplicate LLM calls for identical configs

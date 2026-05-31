@@ -119,3 +119,36 @@ _(Updated after each correction or mistake)_
 
 **Future rule:** No HEALTHCHECK ships without (a) a test in `tests/` that proves it FAILS when the dependency is down, and (b) a comment in the Dockerfile explaining what runtime signal it actually checks. Build-time env vars are never sufficient.
 
+## 2026-06-01 — Stray package.json Causes 100+ Node.js Processes
+
+**Mistake:** Turbopack spawned hundreds of file-watching Node.js workers, crashing the system. The dev server became unusable.
+
+**Why it happened:** A stray `package.json`, `package-lock.json`, and `node_modules/` existed at `C:\Users\aditj\` (user home directory). Turbopack walks up directories looking for lockfiles to determine workspace root. Finding one in the home dir, it set the entire home directory as the workspace, spawning watchers for hundreds of thousands of files.
+
+**Prevention:**
+1. Never run `npm install` in the user home directory.
+2. Before debugging Turbopack performance, check for lockfiles ABOVE the project root: `ls ../package*.json`, `ls ../../package*.json`.
+3. The `turbopack.root` config is a workaround, not a fix. The real fix is removing the stray lockfile.
+
+**Future rule:** If Next.js/Turbopack shows "detected multiple lockfiles" or spawns excessive processes, immediately check parent directories (up to user home) for stray `package.json`/`package-lock.json`/`node_modules`. Delete them.
+
+## 2026-06-01 — .env Not Loaded by Uvicorn
+
+**Mistake:** Set `NIGHTMARENET_API_KEY` in `.env` but the warning persisted because uvicorn doesn't load `.env` automatically.
+
+**Why it happened:** Assumed `.env` would be auto-loaded like in Node.js (dotenv is built into many Node frameworks). Python's `os.environ` only reads actual shell environment variables.
+
+**Prevention:** Always add `python-dotenv` + `load_dotenv()` at the top of the app entrypoint. Guard with try/except ImportError for optional dep.
+
+**Future rule:** Any Python service that reads from `.env` must explicitly call `load_dotenv()` before accessing `os.environ`. Never assume `.env` is auto-loaded.
+
+## 2026-06-01 — npm audit fix --force Downgrades Packages
+
+**Mistake:** Running `npm audit fix --force` downgraded Next.js from 16.2.6 to an old version, introducing 90 vulnerabilities instead of fixing 2.
+
+**Why it happened:** `--force` allows breaking changes including major version downgrades. The audit resolver found an ancient version without the specific CVE but with many others.
+
+**Prevention:** Never use `npm audit fix --force` blindly. Instead: `npm install <package>@latest` for targeted upgrades.
+
+**Future rule:** For npm vulnerabilities: (1) `npm audit` to identify, (2) `npm install <pkg>@<specific-safe-version>` to fix. Never `--force`.
+
