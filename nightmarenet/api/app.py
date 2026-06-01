@@ -15,8 +15,9 @@ import time
 from typing import Any, Optional
 
 try:
-    from dotenv import load_dotenv
     from pathlib import Path
+
+    from dotenv import load_dotenv
     _env_path = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(_env_path)
 except ImportError:

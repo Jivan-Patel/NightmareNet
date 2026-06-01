@@ -84,7 +84,7 @@ Configured in `.claude/settings.json`:
 - **Stray lockfile trap**: If Next.js/Turbopack spawns excessive Node.js processes, check parent directories (up to user home `C:\Users\aditj\`) for stray `package.json`/`package-lock.json`/`node_modules`. Delete them — Turbopack walks up looking for workspace root. Root-level `package.json`, `package-lock.json`, and `node_modules/` must NEVER be committed to git (they were once tracked here and caused Turbopack multi-lockfile chaos).
 - **Python .env loading**: uvicorn does NOT auto-load `.env` files. Always use `python-dotenv` with `load_dotenv()` at app entrypoint (guarded by `try/except ImportError`).
 - **npm audit fix --force is dangerous**: it can DOWNGRADE packages and introduce MORE vulnerabilities. Prefer `npm install <pkg>@latest` for targeted fixes.
-- GitHub contributions only count on the default branch (`main`); work on feature branches must be merged + pushed to main for profile activity.
+- GitHub contributions only count on the default branch (`main`); user prefers working directly on `main` (not feature branches) so every commit immediately counts toward profile activity.
 
 ## Learned Workspace Facts
 
@@ -92,15 +92,18 @@ Configured in `.claude/settings.json`:
 - Health (`/api/v1/health`) optionally runs `pytest --collect-only` via `NIGHTMARENET_HEALTH_TEST_COUNT` (leave unset in production); pipeline runner registry capped by `NIGHTMARENET_MAX_PIPELINE_RUNNERS` (default 64, completed runs evicted first when over cap).
 - Repo structure: OSS core in `nightmarenet/` (Apache 2.0), hosted platform in `nightmarenet_server/` (OAuth GitHub/Google + API keys, Celery workers, WebSocket fan-out, Alembic migrations; fully wired — app.py mounts OSS core, no additional integration needed), frontend in `frontend/` (Next.js 14 + Tailwind v4 + Framer Motion + GSAP).
 - Dev GPU: RTX 3050 Ti (4 GB VRAM, CC 8.6); Python 3.12 + CUDA 12.1 venv at `.venv312/`. DistilBERT/DistilGPT-2 fit without issues; GPT-2 (124M) needs gradient checkpointing + FP16, batch size 4-8 max.
-- 20-panel feature-dense dashboard lives at `/dashboard`, with `frontend/src/components/dashboard/` (AppShell, Cmd+K palette, 12 panels) and `frontend/src/components/ui/` (12 primitives); design inspiration is `C:\Users\aditj\New Projects\TR-104-DarkLead-main`. Current stats: 434+ tests, 13 API endpoints.
+- 20-panel feature-dense dashboard lives at `/dashboard`, with `frontend/src/components/dashboard/` (AppShell, Cmd+K palette, 12 panels) and `frontend/src/components/ui/` (12 primitives); design inspiration is `C:\Users\aditj\New Projects\TR-104-DarkLead-main`. Current stats: 445+ tests, 13 API endpoints.
 - OSS FastAPI app exposes WebSocket at `/ws/runs/{run_id}` for live pipeline streaming; PipelineLab frontend uses WebSocket-first with polling fallback.
 - Strategic direction: hybrid open-source core (Apache 2.0) + hosted platform (paid). OSS = distortion engines, training loop, CLI. Paid = orchestration, compliance, multi-GPU, team features. Pricing: Community $0 (single-GPU, self-hosted) / Pro $49/seat/mo + compute (~1000 cycles/mo) / Enterprise $50K-$100K/yr (SSO, audit, compliance, on-prem, SLA, custom engines).
 - Strategic execution plan at `.cursor/plans/nightmarenet_strategic_research_synthesis_9589248a.plan.md` (do not edit while executing); research synthesis artifact at `docs/solutions/nightmarenet-research-synthesis.md`; full deep-research workflows expect **parallel-cli** (or equivalent) available.
 - Cyberpunk-neural design system: Void Black (#020617) backgrounds, Indigo Dream (#818CF8), Red Nightmare (#EF4444), Cyan Neural (#06B6D4), Amber Compress (#F59E0B); Inter (UI) + JetBrains Mono (code/metrics); Framer Motion spring-based 60fps motion.
 - Academic positioning: closest prior art is PAD (Deperrois 2022, eLife) for sleep-inspired training; NightmareNet differentiates by targeting adversarial robustness (not representation learning) with integrated compression phase. Benchmark v1 headline: +14.49% relative robustness improvement on SST-2 (DistilBERT, 500 train / 200 val, seed 42), documented in `docs/research/benchmark-v1.md` and `docs/research/paper-draft.md`.
 - Target market timing: EU AI Act Article 15 (robustness mandate) fully applicable August 2, 2026.
-- CI integration: composite GitHub Action at `.github/actions/nightmarenet-robustness-check/` invokes `nightmarenet evaluate --json` to gate PRs on a robustness threshold; active development branch is `Frontend-with-Updated-backend`.
+- CI integration: composite GitHub Action at `.github/actions/nightmarenet-robustness-check/` invokes `nightmarenet evaluate --json` to gate PRs on a robustness threshold; active development is on `main` branch directly.
 - 12 Cursor skills are committed at `.cursor/skills/` (auto-invoke; `.cursor/skills/` is exempted from the `.cursor/` gitignore). Continual-learning index lives at `.cursor/hooks/state/continual-learning-index.json` (NightmareNet-local; supersedes the prior AtomicPulse cross-workspace path).
+- GitHub account: `aditjain2005@gmail.com` / [Adit-Jain-srm](https://github.com/Adit-Jain-srm); git config must use this email for contributions to count.
+- PostCSS/Tailwind v4 gotcha: escaped slashes (`\/`) and nested brackets in CSS attribute selectors (e.g. `[class*="bg-white\/[0.0"]`) break PostCSS parsing. Use simplified selectors like `[class*="bg-white"]` instead.
+- Current test count: 445+ tests passing across the suite.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

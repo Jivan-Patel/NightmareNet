@@ -6,9 +6,6 @@ deep merge behavior, and empty/edge values.
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
 import yaml
 

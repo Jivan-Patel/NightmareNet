@@ -1,6 +1,5 @@
 """Tests for WebSocket live pipeline progress endpoint."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,7 +8,7 @@ from nightmarenet.api.app import app
 
 try:
     from starlette.testclient import TestClient
-    from starlette.websockets import WebSocketDisconnect
+    from starlette.websockets import WebSocketDisconnect  # noqa: F401
 except ImportError:
     pytest.skip("starlette not installed", allow_module_level=True)
 
