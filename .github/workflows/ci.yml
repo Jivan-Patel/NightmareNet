@@ -33,7 +33,7 @@ jobs:
         run: ruff check nightmarenet/ scripts/ tests/
 
       - name: Type check with mypy
-        run: mypy nightmarenet/ --ignore-missing-imports --disable-error-code=import-untyped,operator
+        run: mypy nightmarenet/ --ignore-missing-imports --disable-error-code import-untyped --disable-error-code operator
 
       - name: Run tests with coverage
         run: pytest --cov=nightmarenet --cov-report=xml --cov-report=term-missing
