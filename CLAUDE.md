@@ -44,8 +44,8 @@ ruff check .
 # Type check
 mypy nightmarenet/
 
-# Start API server
-uvicorn nightmarenet.api.app:app --reload --port 8000
+# Start API server (--env-file ensures .env propagates to reload workers)
+uvicorn nightmarenet.api.app:app --reload --port 8000 --env-file .env
 
 # Frontend
 cd frontend && npm run dev           # Dev server on :3000

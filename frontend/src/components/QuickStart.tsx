@@ -71,7 +71,7 @@ export default function QuickStart() {
   };
 
   return (
-    <section id="quickstart" className="relative py-24 px-6">
+    <section id="quickstart" className="relative py-24 px-6" suppressHydrationWarning>
       <div className="max-w-4xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
