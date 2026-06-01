@@ -124,11 +124,24 @@ export interface CompareResponse {
   analysis: string;
 }
 
+function getApiKey(): string | undefined {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("nightmarenet-api-key") || undefined;
+  }
+  return undefined;
+}
+
+function authHeaders(): Record<string, string> {
+  const key = getApiKey();
+  return key ? { "X-API-Key": key } : {};
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${getApiBase()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...options?.headers,
     },
   });
@@ -336,6 +349,7 @@ export async function* askCopilot(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      ...authHeaders(),
     },
     body: JSON.stringify({ question, section, context, stream: true }),
     signal,
@@ -395,10 +409,43 @@ export async function* askCopilot(
 
 // --- Data optimization (Adaption Labs) ---
 
+export interface BrandControls {
+  length?: "minimal" | "concise" | "detailed" | "extensive";
+  safety_categories?: string[];
+  hallucination_mitigation?: boolean;
+  blueprint?: string;
+}
+
+export interface RecipeSpecification {
+  recipes?: {
+    reasoning_traces?: boolean;
+    deduplication?: boolean;
+    prompt_rephrase?: boolean;
+  };
+}
+
+export interface JobSpecification {
+  max_rows?: number;
+  idempotency_key?: string;
+}
+
 export interface DataOptimizeRequest {
   texts: string[];
-  column_mapping: Record<string, string>;
+  column_mapping: Record<string, string | string[]>;
+  phase?: "wake" | "dream" | "nightmare" | "compress";
+  brand_controls?: BrandControls;
+  recipe_specification?: RecipeSpecification;
+  job_specification?: JobSpecification;
   estimate_only?: boolean;
+}
+
+export interface DataImportRequest {
+  source: "huggingface" | "kaggle";
+  url: string;
+  files: string[];
+  column_mapping: Record<string, string | string[]>;
+  brand_controls?: BrandControls;
+  recipe_specification?: RecipeSpecification;
 }
 
 export interface DataOptimizeResponse {
@@ -451,6 +498,7 @@ export async function* optimizeDataStream(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      ...authHeaders(),
     },
     body: JSON.stringify(body),
     signal,
@@ -528,6 +576,22 @@ export interface SuggestConfigResponse {
 
 export function suggestConfig(body: SuggestConfigRequest): Promise<SuggestConfigResponse> {
   return apiFetch<SuggestConfigResponse>("/api/v1/suggest/config", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// --- Adaption Labs: Import & Estimate ---
+
+export function importAndOptimize(body: DataImportRequest): Promise<DataOptimizeResponse> {
+  return apiFetch<DataOptimizeResponse>("/api/v1/data/import", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function estimateOptimization(body: DataOptimizeRequest): Promise<DataOptimizeResponse> {
+  return apiFetch<DataOptimizeResponse>("/api/v1/data/optimize/estimate", {
     method: "POST",
     body: JSON.stringify(body),
   });

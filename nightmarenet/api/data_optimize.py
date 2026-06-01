@@ -26,6 +26,8 @@ router = APIRouter(tags=["Data Optimization"])
 
 _OPTIMIZE_BODY = Body(...)
 _STREAM_BODY = Body(...)
+_IMPORT_BODY = Body(...)
+_ESTIMATE_BODY = Body(...)
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="data-opt")
 
@@ -99,7 +101,11 @@ class DataOptimizeRequest(BaseModel):
     """Request model for dataset optimization."""
 
     texts: List[str] = Field(..., min_length=1, max_length=10000)
-    column_mapping: Dict[str, str]
+    column_mapping: Dict[str, Any]
+    phase: Optional[str] = Field(None, pattern="^(wake|dream|nightmare|compress)$")
+    brand_controls: Optional[Dict[str, Any]] = None
+    recipe_specification: Optional[Dict[str, Any]] = None
+    job_specification: Optional[Dict[str, Any]] = None
     estimate_only: bool = False
 
     @field_validator("texts")
@@ -113,12 +119,21 @@ class DataOptimizeRequest(BaseModel):
 
     @field_validator("column_mapping")
     @classmethod
-    def _must_have_prompt_key(cls, v: Dict[str, str]) -> Dict[str, str]:
+    def _must_have_prompt_key(cls, v: Dict[str, Any]) -> Dict[str, Any]:
         if "prompt" not in v:
             raise ValueError("column_mapping must include a 'prompt' key")
-        if not all(isinstance(k, str) and isinstance(val, str) for k, val in v.items()):
-            raise ValueError("column_mapping keys and values must be strings")
         return v
+
+
+class DataImportRequest(BaseModel):
+    """Request for HuggingFace/Kaggle import optimization."""
+
+    source: str = Field(..., pattern="^(huggingface|kaggle)$")
+    url: str
+    files: List[str] = Field(..., min_length=1)
+    column_mapping: Dict[str, Any]
+    brand_controls: Optional[Dict[str, Any]] = None
+    recipe_specification: Optional[Dict[str, Any]] = None
 
 
 class DataOptimizeResponse(BaseModel):
@@ -168,8 +183,11 @@ def _compute_text_stats(texts: List[str]) -> Dict[str, Any]:
 
 def _run_optimization_sync(
     texts: List[str],
-    column_mapping: Dict[str, str],
+    column_mapping: Dict[str, Any],
     run: OptimizationRun,
+    brand_controls: Optional[Dict[str, Any]] = None,
+    recipe_specification: Optional[Dict[str, Any]] = None,
+    job_specification: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Execute optimization synchronously (called in thread pool)."""
     from nightmarenet.data.adaption import Adaption, AdaptionOptimizer
@@ -211,7 +229,12 @@ def _run_optimization_sync(
         run.progress_pct = 30.0
 
         result = optimizer.optimize_dataset(
-            dataset, column_mapping, max_rows=len(texts)
+            dataset,
+            column_mapping,
+            max_rows=len(texts),
+            brand_controls=brand_controls,
+            recipe_specification=recipe_specification,
+            job_specification=job_specification,
         )
 
         if result is None:
@@ -331,7 +354,12 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
                 asyncio.get_running_loop().run_in_executor(
                     _executor,
                     lambda: optimizer.optimize_dataset(
-                        dataset, body.column_mapping, max_rows=len(body.texts)
+                        dataset,
+                        body.column_mapping,
+                        max_rows=len(body.texts),
+                        brand_controls=body.brand_controls,
+                        recipe_specification=body.recipe_specification,
+                        job_specification=body.job_specification,
                     ),
                 ),
                 timeout=660.0,
@@ -418,6 +446,9 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
             body.texts,
             body.column_mapping,
             run,
+            body.brand_controls,
+            body.recipe_specification,
+            body.job_specification,
         )
 
         return OptimizationStatusResponse(**run.to_dict())
@@ -465,6 +496,9 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
             body.texts,
             body.column_mapping,
             run,
+            body.brand_controls,
+            body.recipe_specification,
+            body.job_specification,
         )
 
         async def event_generator():
@@ -518,6 +552,126 @@ def register_data_optimize_routes(app: Any, limiter: Limiter) -> None:
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
             },
+        )
+
+    @router.post(
+        "/api/v1/data/import",
+        responses={
+            400: {"description": "Bad request"},
+            429: {"description": "Rate limit exceeded"},
+            503: {"description": "SDK unavailable"},
+        },
+    )
+    @limiter.limit("3/minute")
+    async def import_and_optimize(
+        request: Request,
+        body: DataImportRequest = _IMPORT_BODY,
+    ) -> DataOptimizeResponse:
+        """Import from HuggingFace/Kaggle and optimize via Adaption."""
+        from nightmarenet.data.adaption import Adaption, AdaptionOptimizer
+
+        if Adaption is None:
+            raise HTTPException(status_code=503, detail="Adaption SDK not installed.")
+        if not os.environ.get("ADAPTION_API_KEY"):
+            raise HTTPException(status_code=503, detail="ADAPTION_API_KEY not set.")
+
+        start_time = time.time()
+        optimizer = AdaptionOptimizer()
+
+        try:
+            if body.source == "huggingface":
+                result = await asyncio.get_running_loop().run_in_executor(
+                    _executor,
+                    lambda: optimizer.optimize_from_huggingface(
+                        body.url, body.files, body.column_mapping,
+                        brand_controls=body.brand_controls,
+                        recipe_specification=body.recipe_specification,
+                    ),
+                )
+            else:
+                result = await asyncio.get_running_loop().run_in_executor(
+                    _executor,
+                    lambda: optimizer.optimize_from_kaggle(
+                        body.url, body.files, body.column_mapping,
+                        brand_controls=body.brand_controls,
+                        recipe_specification=body.recipe_specification,
+                    ),
+                )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Import failed: {exc}"
+            ) from exc
+
+        if result is None:
+            raise HTTPException(status_code=503, detail="Import optimization failed.")
+
+        dataset_id, quality = result
+        elapsed = round(time.time() - start_time, 2)
+
+        return DataOptimizeResponse(
+            status="completed",
+            run_id=dataset_id,
+            quality=quality,
+            elapsed_seconds=elapsed,
+        )
+
+    @router.post(
+        "/api/v1/data/optimize/estimate",
+        responses={
+            400: {"description": "Bad request"},
+            429: {"description": "Rate limit exceeded"},
+            503: {"description": "SDK unavailable"},
+        },
+    )
+    @limiter.limit("10/minute")
+    async def estimate_optimization(
+        request: Request,
+        body: DataOptimizeRequest = _ESTIMATE_BODY,
+    ) -> DataOptimizeResponse:
+        """Estimate optimization cost without starting a run."""
+        from nightmarenet.data.adaption import Adaption, AdaptionOptimizer
+
+        if Adaption is None:
+            raise HTTPException(status_code=503, detail="Adaption SDK not installed.")
+        if not os.environ.get("ADAPTION_API_KEY"):
+            raise HTTPException(status_code=503, detail="ADAPTION_API_KEY not set.")
+
+        try:
+            from datasets import Dataset
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=503, detail="datasets library not available."
+            ) from exc
+
+        dataset = Dataset.from_dict({"text": body.texts})
+        optimizer = AdaptionOptimizer()
+
+        start_time = time.time()
+        try:
+            estimate = await asyncio.get_running_loop().run_in_executor(
+                _executor,
+                lambda: optimizer.estimate_cost(
+                    dataset,
+                    body.column_mapping,
+                    brand_controls=body.brand_controls,
+                    recipe_specification=body.recipe_specification,
+                    job_specification=body.job_specification,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Estimation failed: {exc}"
+            ) from exc
+
+        if estimate is None:
+            raise HTTPException(status_code=503, detail="Estimation failed.")
+
+        elapsed = round(time.time() - start_time, 2)
+        return DataOptimizeResponse(
+            status="estimated",
+            estimate=estimate,
+            elapsed_seconds=elapsed,
+            before_stats=_compute_text_stats(body.texts),
         )
 
     app.include_router(router)

@@ -79,4 +79,4 @@ class TestAdaptionOptimizerWithMockClient:
             optimizer = AdaptionOptimizer()
             estimate = optimizer.estimate_cost(mock_dataset, {"prompt": "text"})
 
-        assert estimate == {"credits": 1.5, "estimated_minutes": 2.0}
+        assert estimate == {"credits": 1.5, "estimated_minutes": 2.0, "dataset_id": "ds-123"}

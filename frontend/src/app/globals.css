@@ -38,6 +38,9 @@
     background: rgba(129, 140, 248, 0.25);
     color: var(--color-text);
   }
+  .light ::selection {
+    background: rgba(99, 102, 241, 0.2);
+  }
 }
 
 html {
@@ -105,32 +108,73 @@ body {
 
 /* ── Light mode overrides ── */
 .light .glass {
-  background: rgba(248, 250, 252, 0.7);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.light .glass-card {
-  background: rgba(248, 250, 252, 0.6);
+  background: rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+.light .glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 .light .glass-card:hover {
-  border-color: rgba(34, 211, 238, 0.3);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 60px rgba(34, 211, 238, 0.06);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 60px rgba(99, 102, 241, 0.06);
 }
 
 .light .glass-navbar {
-  background: rgba(248, 250, 252, 0.75);
+  background: rgba(255, 255, 255, 0.85);
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .light .terminal {
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .light .scanlines::after {
   display: none;
+}
+
+/* Force dark-only text colors to be readable in light mode */
+.light .text-slate-100 { color: #1e293b; }
+.light .text-slate-200 { color: #334155; }
+.light .text-slate-300 { color: #475569; }
+.light .text-slate-400 { color: #64748b; }
+.light .text-white { color: #0f172a; }
+.light .text-white\/80 { color: rgba(15, 23, 42, 0.8); }
+.light .text-white\/60 { color: rgba(15, 23, 42, 0.6); }
+
+/* Borders that use white opacity — flip to black opacity */
+.light [class*="border-white\/"] {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Backgrounds that use white opacity — flip to black opacity */
+.light [class*="bg-white\/[0.0"] {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+.light [class*="bg-white\/[0.1"] {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Gradient text needs darker stops in light mode */
+.light .text-gradient-dream {
+  background: linear-gradient(135deg, #6366f1, #4f46e5, #7c3aed);
+}
+.light .text-gradient-nightmare {
+  background: linear-gradient(135deg, #dc2626, #b91c1c, #ea580c);
+}
+.light .text-gradient-neural {
+  background: linear-gradient(135deg, #0891b2, #0e7490, #6366f1);
+}
+.light .text-gradient-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #334155 40%, #4f46e5 70%, #0891b2 100%);
+}
+
+/* Button primary stays white text even in light mode */
+.light .btn-primary {
+  color: white;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -198,8 +242,59 @@ body {
   box-shadow: 0 0 20px rgba(34, 211, 238, 0.15), 0 0 60px rgba(34, 211, 238, 0.05);
 }
 
+/* Neon glows — disabled in light mode (invisible on white) */
+.light .glow-dream,
+.light .glow-nightmare,
+.light .glow-neural {
+  text-shadow: none;
+}
+.light .box-glow-dream,
+.light .box-glow-nightmare,
+.light .box-glow-neural {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
 /* Section divider — animated gradient line */
 .section-glow-line {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(129, 140, 248, 0.2) 20%,
+    rgba(34, 211, 238, 0.35) 50%,
+    rgba(129, 140, 248, 0.2) 80%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    black 10%,
+    black 90%,
+    transparent 100%
+  );
+}
+
+/* Section divider — darker for light mode */
+.light .section-glow-line {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(99, 102, 241, 0.3) 20%,
+    rgba(14, 116, 144, 0.4) 50%,
+    rgba(99, 102, 241, 0.3) 80%,
+    transparent 100%
+  );
+}
+
+/* Neural grid and dot-matrix — darker for light */
+.light .neural-grid {
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.06) 1px, transparent 1px);
+}
+.light .dot-matrix {
+  background-image: radial-gradient(rgba(99, 102, 241, 0.12) 1px, transparent 1px);
+}
   height: 1px;
   background: linear-gradient(
     90deg,
@@ -458,6 +553,14 @@ body {
   color: var(--color-text);
   border-color: rgba(34, 211, 238, 0.3);
   background: rgba(30, 41, 59, 0.3);
+}
+
+.light .btn-ghost {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.light .btn-ghost:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.06);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */

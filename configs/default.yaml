@@ -91,3 +91,12 @@ tracking:
 
 # Reproducibility
 seed: 42
+
+# Adaption Labs dataset optimization (optional)
+adaption:
+  enabled: false          # Set true + ADAPTION_API_KEY to use
+  estimate_first: true    # Pre-flight cost check before running
+  max_credits: 100        # Skip if estimated credits exceed this
+  max_rows: 5000          # Subset for cost control
+  column_mapping:
+    prompt: "text"

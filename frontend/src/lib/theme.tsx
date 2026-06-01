@@ -41,6 +41,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (stored && ["dark", "light", "system"].includes(stored)) {
       setThemeState(stored);
     }
+    const root = document.documentElement;
+    if (!root.classList.contains("dark") && !root.classList.contains("light")) {
+      root.classList.add("dark");
+    }
   }, []);
 
   useEffect(() => {
@@ -54,11 +58,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.classList.add(resolved);
 
     if (resolved === "light") {
-      root.style.setProperty("--color-void", "#f8fafc");
-      root.style.setProperty("--color-abyss", "#f1f5f9");
+      root.style.setProperty("--color-void", "#ffffff");
+      root.style.setProperty("--color-abyss", "#f8fafc");
       root.style.setProperty("--color-deep", "#e2e8f0");
       root.style.setProperty("--color-surface", "#cbd5e1");
-      root.style.setProperty("--color-muted", "#64748b");
+      root.style.setProperty("--color-muted", "#475569");
       root.style.setProperty("--color-text", "#0f172a");
       root.style.setProperty("--color-text-dim", "#334155");
     } else {

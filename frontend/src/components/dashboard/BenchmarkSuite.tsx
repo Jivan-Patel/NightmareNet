@@ -56,7 +56,9 @@ export function BenchmarkSuite() {
           clearInterval(handle);
           const next = { ...r };
           delete next[b.id];
-          toast.push({ title: `${b.name} finished`, description: "Open the run in Live Metrics", variant: "success" });
+          setTimeout(() => {
+            toast.push({ title: `${b.name} finished`, description: "Open the run in Live Metrics", variant: "success" });
+          }, 0);
           return next;
         }
         return { ...r, [b.id]: cur };

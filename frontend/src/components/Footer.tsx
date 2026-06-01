@@ -13,7 +13,7 @@ function LinkedInIcon({ className }: { className?: string }) {
 
 export default function Footer() {
   return (
-    <footer className="relative border-t border-white/[0.04] py-12 px-6">
+    <footer className="relative border-t border-black/[0.04] dark:border-white/[0.04] py-12 px-6">
       {/* Gradient divider */}
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-neural/20 to-transparent" />
 
@@ -64,7 +64,7 @@ export default function Footer() {
             {["Next.js", "FastAPI", "PyTorch", "Framer"].map((tech) => (
               <span
                 key={tech}
-                className="text-[9px] font-mono text-muted/50 px-2 py-1 rounded-md bg-white/[0.02] border border-white/[0.03]"
+                className="text-[9px] font-mono text-muted/50 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.04] dark:border-white/[0.03]"
               >
                 {tech}
               </span>
@@ -72,7 +72,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-8 pt-6 border-t border-white/[0.03] text-center">
+        <div className="mt-8 pt-6 border-t border-black/[0.03] dark:border-white/[0.03] text-center">
           <p className="text-[10px] text-muted/40 font-mono">
             NightmareNet v0.2.0 • MIT License • Sleep-Inspired Training Paradigm
           </p>

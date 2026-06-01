@@ -180,7 +180,7 @@ export default function Hero() {
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="text-center p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]"
+            className="text-center p-3 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.04]"
           >
             <p className="text-lg font-bold font-mono text-gradient-neural">
               {stat.value}

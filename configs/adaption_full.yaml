@@ -1,0 +1,78 @@
+# Adaption Labs full pipeline config — NightmareNet phase-aware optimization
+#
+# Use alongside a base config:
+#   nightmarenet train --config configs/default.yaml --config configs/adaption_full.yaml
+#
+# Requires: pip install adaption
+# Requires: ADAPTION_API_KEY env var set
+
+adaption:
+  enabled: true
+  estimate_first: true
+  max_credits: 50
+  max_rows: 5000
+  parallel_phases: true
+
+  column_mapping:
+    prompt: "text"
+
+  wake_controls:
+    enabled: true
+    brand_controls:
+      hallucination_mitigation: true
+      length: "detailed"
+      blueprint: >
+        You are preparing training data for NightmareNet, an AI robustness
+        system. Ensure completions are factually accurate, well-grounded,
+        and free of hallucination. Preserve the original intent and domain
+        knowledge of each example. Focus on clarity, precision, and
+        verifiable information.
+    recipe_specification:
+      recipes:
+        reasoning_traces: true
+        deduplication: true
+
+  dream_controls:
+    enabled: true
+    brand_controls:
+      length: "concise"
+      blueprint: >
+        Generate creative paraphrases that preserve the core semantic
+        meaning while introducing novel phrasings, sentence structures,
+        and perspectives. The goal is linguistic diversity without
+        factual drift. Maintain the same sentiment and intent as the
+        original.
+    recipe_specification:
+      recipes:
+        prompt_rephrase: true
+        deduplication: true
+
+  nightmare_controls:
+    enabled: true
+    brand_controls:
+      length: "detailed"
+      safety_categories:
+        - "harassment"
+        - "hate"
+      blueprint: >
+        Generate adversarially challenging examples that stress-test
+        model robustness. Introduce subtle contradictions, ambiguous
+        phrasings, misleading contexts, and edge-case formulations
+        while staying within safety boundaries. The goal is to create
+        hard negatives that force the model to be precise.
+    recipe_specification:
+      recipes:
+        reasoning_traces: true
+
+  compress_controls:
+    enabled: false
+    brand_controls:
+      hallucination_mitigation: true
+      length: "extensive"
+      blueprint: >
+        Generate high-quality teacher outputs with explicit
+        chain-of-thought reasoning. These will be used as distillation
+        targets. Be thorough, accurate, and logical.
+    recipe_specification:
+      recipes:
+        reasoning_traces: true

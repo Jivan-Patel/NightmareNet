@@ -12,7 +12,7 @@ import enum
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from nightmarenet.data.generator import create_generators_from_config
 from nightmarenet.data.ingest import DataIngestor
@@ -53,6 +53,8 @@ class PipelineMetrics:
     trained_results: Optional[dict] = None
     comparison: Optional[dict] = None
     report_md: Optional[str] = None
+    adaption_quality: Optional[dict] = None
+    quality_feedback: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return {
@@ -99,6 +101,9 @@ class Pipeline:
 
         # Populated by each stage
         self._dataset = None
+        self._wake_dataset = None
+        self._dream_base = None
+        self._nightmare_base = None
         self._train_dl = None
         self._dream_dl = None
         self._nightmare_dl = None
@@ -192,10 +197,15 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     def optimize(self) -> None:
-        """Optionally optimize the ingested dataset via Adaption Labs.
+        """Phase-aware dataset optimization via Adaption Labs.
 
-        Reads configuration from ``self.config["adaption"]``. If disabled
+        Reads configuration from ``self.config["adaption"]``. Supports
+        per-phase brand controls and recipe specifications. If disabled
         or the SDK is unavailable, this is a silent no-op.
+
+        When phase-specific controls are configured, produces separate
+        optimized datasets for wake, dream, and nightmare phases stored
+        as ``self._wake_dataset``, ``self._dream_base``, ``self._nightmare_base``.
         """
         adaption_cfg = self.config.get("adaption", {})
         if not adaption_cfg.get("enabled", False):
@@ -224,30 +234,144 @@ class Pipeline:
         self.metrics.current_phase = "optimize"
         self._emit()
 
+        optimizer = AdaptionOptimizer()
+
+        # Estimate-first gating
+        if adaption_cfg.get("estimate_first", False):
+            try:
+                estimate = optimizer.estimate_cost(
+                    self._dataset, column_mapping
+                )
+                if estimate:
+                    max_credits = adaption_cfg.get("max_credits", 100)
+                    if estimate["credits"] > max_credits:
+                        logger.warning(
+                            "Adaption estimated %.1f credits (budget: %.1f). "
+                            "Skipping optimization.",
+                            estimate["credits"], max_credits,
+                        )
+                        return
+                    logger.info(
+                        "Adaption estimate: %.1f credits, ~%.1f min",
+                        estimate["credits"], estimate["estimated_minutes"],
+                    )
+            except Exception:
+                logger.warning("Estimate check failed; proceeding anyway.", exc_info=True)
+
+        # Determine if we have per-phase controls
+        has_phase_controls = any(
+            adaption_cfg.get(f"{phase}_controls", {}).get("enabled", False)
+            for phase in ("wake", "dream", "nightmare")
+        )
+
+        quality_results: dict = {}
+
+        if has_phase_controls:
+            self._optimize_per_phase(
+                optimizer, adaption_cfg, column_mapping, max_rows, quality_results
+            )
+        else:
+            self._optimize_generic(
+                optimizer, adaption_cfg, column_mapping, max_rows, quality_results
+            )
+
+        self.metrics.adaption_quality = quality_results or None
+        self.metrics.progress_pct = 15.0
+        self._emit()
+
+    def _optimize_generic(
+        self,
+        optimizer: Any,
+        adaption_cfg: dict,
+        column_mapping: dict,
+        max_rows: int,
+        quality_results: dict,
+    ) -> None:
+        """Single generic optimization pass (backward-compatible)."""
+        brand_controls = adaption_cfg.get("brand_controls")
+        recipe_specification = adaption_cfg.get("recipe_specification")
+
         try:
-            optimizer = AdaptionOptimizer()
             result = optimizer.optimize_dataset(
-                self._dataset, column_mapping, max_rows=max_rows
+                self._dataset,
+                column_mapping,
+                max_rows=max_rows,
+                brand_controls=brand_controls,
+                recipe_specification=recipe_specification,
             )
             if result is not None:
                 optimized_dataset, quality = result
                 self._dataset = optimized_dataset
-                self.metrics.progress_pct = 15.0
-                self._emit()
+                quality_results["generic"] = quality
                 logger.info("Dataset optimization complete: %s", quality)
             else:
-                logger.warning("Adaption optimization returned None; keeping original dataset.")
-                self._emit()
+                logger.warning("Adaption optimization returned None; keeping original.")
         except Exception:
-            logger.warning("Adaption optimization failed; keeping original dataset.", exc_info=True)
+            logger.warning("Adaption optimization failed; keeping original.", exc_info=True)
+
+    def _optimize_per_phase(
+        self,
+        optimizer: Any,
+        adaption_cfg: dict,
+        column_mapping: dict,
+        max_rows: int,
+        quality_results: dict,
+    ) -> None:
+        """Separate optimization passes per training phase."""
+        phase_names = ("wake", "dream", "nightmare")
+
+        for phase_name in phase_names:
+            phase_cfg = adaption_cfg.get(f"{phase_name}_controls", {})
+            if not phase_cfg.get("enabled", False):
+                continue
+
+            self.metrics.current_phase = f"optimize_{phase_name}"
             self._emit()
+
+            brand_controls = phase_cfg.get("brand_controls")
+            recipe_specification = phase_cfg.get("recipe_specification")
+
+            try:
+                result = optimizer.optimize_dataset(
+                    self._dataset,
+                    column_mapping,
+                    max_rows=max_rows,
+                    brand_controls=brand_controls,
+                    recipe_specification=recipe_specification,
+                )
+                if result is not None:
+                    optimized_dataset, quality = result
+                    quality_results[phase_name] = quality
+
+                    if phase_name == "wake":
+                        self._wake_dataset = optimized_dataset
+                    elif phase_name == "dream":
+                        self._dream_base = optimized_dataset
+                    elif phase_name == "nightmare":
+                        self._nightmare_base = optimized_dataset
+
+                    logger.info(
+                        "Phase '%s' optimization complete: %s", phase_name, quality
+                    )
+                else:
+                    logger.warning(
+                        "Phase '%s' optimization returned None; using original.", phase_name
+                    )
+            except Exception:
+                logger.warning(
+                    "Phase '%s' optimization failed; using original.", phase_name, exc_info=True
+                )
 
     # ------------------------------------------------------------------
     # Stage 2: Prepare
     # ------------------------------------------------------------------
 
     def prepare(self) -> None:
-        """Generate dream/nightmare splits and tokenise all data."""
+        """Generate dream/nightmare splits and tokenise all data.
+
+        Uses phase-specific optimized datasets when available from the
+        Adaption optimization stage.
+        """
         if self._dataset is None:
             raise RuntimeError("Call .ingest() before .prepare()")
         self._set_status(PipelineStatus.PREPARING)
@@ -257,8 +381,15 @@ class Pipeline:
 
         try:
             dream_gen, nightmare_gen = create_generators_from_config(self.config)
-            dream_data = dream_gen.generate(self._dataset)
-            nightmare_data = nightmare_gen.generate(self._dataset)
+
+            wake_data = self._wake_dataset if self._wake_dataset is not None else self._dataset
+            dream_base = self._dream_base if self._dream_base is not None else self._dataset
+            nightmare_base = (
+                self._nightmare_base if self._nightmare_base is not None else self._dataset
+            )
+
+            dream_data = dream_gen.generate(dream_base)
+            nightmare_data = nightmare_gen.generate(nightmare_base)
 
             # Create trainer (loads model + tokenizer)
             self._trainer = Trainer(config=self.config)
@@ -273,7 +404,7 @@ class Pipeline:
             batch_size = self.config.get("training", {}).get("batch_size", 8)
 
             self._train_dl = _tokenize_dataset(
-                self._dataset, self._trainer.tokenizer,
+                wake_data, self._trainer.tokenizer,
                 text_column, max_length, batch_size,
             )
             self._dream_dl = _tokenize_dataset(
@@ -422,10 +553,44 @@ class Pipeline:
             self.metrics.current_phase = "complete"
             self._set_status(PipelineStatus.COMPLETE)
             logger.info("Evaluation complete.")
+
+            self._compute_quality_feedback(comparison)
+
             return comparison
         except Exception as exc:
             self._fail(f"Evaluation failed: {exc}")
             raise
+
+    def _compute_quality_feedback(self, comparison: dict) -> None:
+        """Correlate Adaption quality with robustness improvement."""
+        if not self.metrics.adaption_quality:
+            return
+
+        robustness_delta = comparison.get("robustness_delta")
+        if robustness_delta is None:
+            for key in ("robustness", "avg_robustness", "mean_robustness"):
+                if key in comparison:
+                    robustness_delta = comparison[key]
+                    break
+
+        feedback: dict = {
+            "adaption_phases_optimized": list(self.metrics.adaption_quality.keys()),
+            "robustness_delta": robustness_delta,
+        }
+
+        target_improvement = 0.10
+        if robustness_delta is not None and robustness_delta < target_improvement:
+            feedback["suggestions"] = [
+                "Increase nightmare blueprint aggressiveness",
+                "Enable reasoning_traces for stronger training signal",
+                "Increase max_rows for more diverse training data",
+            ]
+        elif robustness_delta is not None:
+            feedback["suggestions"] = []
+            feedback["status"] = "on_target"
+
+        self.metrics.quality_feedback = feedback
+        logger.info("Quality feedback: %s", feedback)
 
     # ------------------------------------------------------------------
     # Stage 5: Export

@@ -55,10 +55,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="scanlines min-h-full flex flex-col bg-void text-text font-sans">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('nightmarenet-theme');var d=document.documentElement;if(t==='light'){d.classList.add('light')}else{d.classList.add('dark')}}catch(e){d.classList.add('dark')}})()`,
+          }}
+        />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

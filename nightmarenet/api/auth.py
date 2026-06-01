@@ -32,6 +32,12 @@ _PUBLIC_PREFIXES: tuple = (
     "/ws/",
 )
 
+# Exempt origins: requests from these origins skip auth (same-origin dev proxy).
+_EXEMPT_REFERERS: tuple = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Validate X-API-Key header against NIGHTMARENET_API_KEY env var.
@@ -54,6 +60,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if path in _PUBLIC_PATHS:
             return await call_next(request)
         if any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
+            return await call_next(request)
+
+        # Allow same-origin requests from the dev frontend proxy
+        origin = request.headers.get("origin", "")
+        referer = request.headers.get("referer", "")
+        if any(
+            origin.startswith(r) or referer.startswith(r)
+            for r in _EXEMPT_REFERERS
+        ):
             return await call_next(request)
 
         active_key = os.environ.get("NIGHTMARENET_API_KEY") or self.api_key
