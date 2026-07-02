@@ -61,6 +61,12 @@ tracking = [
 distributed = [
     "accelerate>=0.25.0",
 ]
+otel = [
+    "python-json-logger>=2.0.7",
+    "opentelemetry-api>=1.24.0",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.24.0",
+]
 hosted = [
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",

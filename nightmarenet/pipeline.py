@@ -19,6 +19,7 @@ from nightmarenet.data.ingest import DataIngestor
 from nightmarenet.evaluation.evaluator import Evaluator
 from nightmarenet.training.trainer import Trainer, _tokenize_dataset
 from nightmarenet.utils.config import load_config
+from nightmarenet.utils.telemetry import record_metric, setup_telemetry, trace_phase
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,9 @@ class Pipeline:
         self.metrics = PipelineMetrics()
         self._cancelled = False
 
+        # Initialise OTel tracing + metrics (no-op if endpoint not configured)
+        setup_telemetry(config)
+
         # Populated by each stage
         self._dataset = None
         self._wake_dataset = None
@@ -171,26 +175,34 @@ class Pipeline:
             seed=seed,
         )
 
-        try:
-            if urls:
-                self._dataset = ingestor.from_urls(urls)
-            elif file_path:
-                self._dataset = ingestor.from_file(file_path)
-            elif text_content:
-                self._dataset = ingestor.from_text_content(text_content)
-            elif hf_dataset:
-                self._dataset = ingestor.from_huggingface(hf_dataset, subset=hf_subset)
-            else:
-                raise ValueError(
-                    "Provide one of: urls, file_path, text_content, or hf_dataset."
-                )
-            if self._dataset is not None:
-                logger.info("Ingestion complete: %d samples.", len(self._dataset))
-            self.metrics.progress_pct = 8.0
-            self._emit()
-        except Exception as exc:
-            self._fail(f"Ingestion failed: {exc}")
-            raise
+        span_attrs = {
+            "source": (
+                "urls" if urls
+                else ("file" if file_path else ("text" if text_content else "huggingface"))
+            ),
+            "dataset.name": dataset_cfg.get("name", ""),
+        }
+        with trace_phase("ingest", span_attrs):
+            try:
+                if urls:
+                    self._dataset = ingestor.from_urls(urls)
+                elif file_path:
+                    self._dataset = ingestor.from_file(file_path)
+                elif text_content:
+                    self._dataset = ingestor.from_text_content(text_content)
+                elif hf_dataset:
+                    self._dataset = ingestor.from_huggingface(hf_dataset, subset=hf_subset)
+                else:
+                    raise ValueError(
+                        "Provide one of: urls, file_path, text_content, or hf_dataset."
+                    )
+                if self._dataset is not None:
+                    logger.info("Ingestion complete: %d samples.", len(self._dataset))
+                self.metrics.progress_pct = 8.0
+                self._emit()
+            except Exception as exc:
+                self._fail(f"Ingestion failed: {exc}")
+                raise
 
     # ------------------------------------------------------------------
     # Stage 1.5: Optimize (optional — Adaption Labs)
@@ -233,47 +245,49 @@ class Pipeline:
         self.metrics.progress_pct = 8.0
         self.metrics.current_phase = "optimize"
         self._emit()
+        _optimize_span_ctx = trace_phase("optimize", {"has_phase_controls": str(False)})
 
         optimizer = AdaptionOptimizer()
 
-        # Estimate-first gating
-        if adaption_cfg.get("estimate_first", False):
-            try:
-                estimate = optimizer.estimate_cost(
-                    self._dataset, column_mapping
-                )
-                if estimate:
-                    max_credits = adaption_cfg.get("max_credits", 100)
-                    if estimate["credits"] > max_credits:
-                        logger.warning(
-                            "Adaption estimated %.1f credits (budget: %.1f). "
-                            "Skipping optimization.",
-                            estimate["credits"], max_credits,
-                        )
-                        return
-                    logger.info(
-                        "Adaption estimate: %.1f credits, ~%.1f min",
-                        estimate["credits"], estimate["estimated_minutes"],
-                    )
-            except Exception:
-                logger.warning("Estimate check failed; proceeding anyway.", exc_info=True)
-
-        # Determine if we have per-phase controls
+        # Determine if we have per-phase controls (needed for span attr)
         has_phase_controls = any(
             adaption_cfg.get(f"{phase}_controls", {}).get("enabled", False)
             for phase in ("wake", "dream", "nightmare")
         )
 
-        quality_results: dict = {}
+        with trace_phase("optimize", {"has_phase_controls": str(has_phase_controls)}):
+            # Estimate-first gating
+            if adaption_cfg.get("estimate_first", False):
+                try:
+                    estimate = optimizer.estimate_cost(
+                        self._dataset, column_mapping
+                    )
+                    if estimate:
+                        max_credits = adaption_cfg.get("max_credits", 100)
+                        if estimate["credits"] > max_credits:
+                            logger.warning(
+                                "Adaption estimated %.1f credits (budget: %.1f). "
+                                "Skipping optimization.",
+                                estimate["credits"], max_credits,
+                            )
+                            return
+                        logger.info(
+                            "Adaption estimate: %.1f credits, ~%.1f min",
+                            estimate["credits"], estimate["estimated_minutes"],
+                        )
+                except Exception:
+                    logger.warning("Estimate check failed; proceeding anyway.", exc_info=True)
 
-        if has_phase_controls:
-            self._optimize_per_phase(
-                optimizer, adaption_cfg, column_mapping, max_rows, quality_results
-            )
-        else:
-            self._optimize_generic(
-                optimizer, adaption_cfg, column_mapping, max_rows, quality_results
-            )
+            quality_results: dict = {}
+
+            if has_phase_controls:
+                self._optimize_per_phase(
+                    optimizer, adaption_cfg, column_mapping, max_rows, quality_results
+                )
+            else:
+                self._optimize_generic(
+                    optimizer, adaption_cfg, column_mapping, max_rows, quality_results
+                )
 
         self.metrics.adaption_quality = quality_results or None
         self.metrics.progress_pct = 15.0
@@ -379,48 +393,50 @@ class Pipeline:
         self.metrics.current_phase = "prepare"
         self._emit()
 
-        try:
-            dream_gen, nightmare_gen = create_generators_from_config(self.config)
+        model_name = self.config.get("model", {}).get("name", "unknown")
+        with trace_phase("prepare", {"model.name": model_name}):
+            try:
+                dream_gen, nightmare_gen = create_generators_from_config(self.config)
 
-            wake_data = self._wake_dataset if self._wake_dataset is not None else self._dataset
-            dream_base = self._dream_base if self._dream_base is not None else self._dataset
-            nightmare_base = (
-                self._nightmare_base if self._nightmare_base is not None else self._dataset
-            )
+                wake_data = self._wake_dataset if self._wake_dataset is not None else self._dataset
+                dream_base = self._dream_base if self._dream_base is not None else self._dataset
+                nightmare_base = (
+                    self._nightmare_base if self._nightmare_base is not None else self._dataset
+                )
 
-            dream_data = dream_gen.generate(dream_base)
-            nightmare_data = nightmare_gen.generate(nightmare_base)
+                dream_data = dream_gen.generate(dream_base)
+                nightmare_data = nightmare_gen.generate(nightmare_base)
 
-            # Create trainer (loads model + tokenizer)
-            self._trainer = Trainer(config=self.config)
+                # Create trainer (loads model + tokenizer)
+                self._trainer = Trainer(config=self.config)
 
-            # Snapshot baseline model weights for later evaluation
-            self._baseline_model = copy.deepcopy(self._trainer.model)
-            self._baseline_model.eval()
+                # Snapshot baseline model weights for later evaluation
+                self._baseline_model = copy.deepcopy(self._trainer.model)
+                self._baseline_model.eval()
 
-            # Tokenise
-            text_column = self.config.get("dataset", {}).get("text_column", "text")
-            max_length = self.config.get("model", {}).get("max_length", 128)
-            batch_size = self.config.get("training", {}).get("batch_size", 8)
+                # Tokenise
+                text_column = self.config.get("dataset", {}).get("text_column", "text")
+                max_length = self.config.get("model", {}).get("max_length", 128)
+                batch_size = self.config.get("training", {}).get("batch_size", 8)
 
-            self._train_dl = _tokenize_dataset(
-                wake_data, self._trainer.tokenizer,
-                text_column, max_length, batch_size,
-            )
-            self._dream_dl = _tokenize_dataset(
-                dream_data, self._trainer.tokenizer,
-                text_column, max_length, batch_size,
-            )
-            self._nightmare_dl = _tokenize_dataset(
-                nightmare_data, self._trainer.tokenizer,
-                text_column, max_length, batch_size,
-            )
-            logger.info("Preparation complete: dataloaders ready.")
-            self.metrics.progress_pct = 15.0
-            self._emit()
-        except Exception as exc:
-            self._fail(f"Preparation failed: {exc}")
-            raise
+                self._train_dl = _tokenize_dataset(
+                    wake_data, self._trainer.tokenizer,
+                    text_column, max_length, batch_size,
+                )
+                self._dream_dl = _tokenize_dataset(
+                    dream_data, self._trainer.tokenizer,
+                    text_column, max_length, batch_size,
+                )
+                self._nightmare_dl = _tokenize_dataset(
+                    nightmare_data, self._trainer.tokenizer,
+                    text_column, max_length, batch_size,
+                )
+                logger.info("Preparation complete: dataloaders ready.")
+                self.metrics.progress_pct = 15.0
+                self._emit()
+            except Exception as exc:
+                self._fail(f"Preparation failed: {exc}")
+                raise
 
     # ------------------------------------------------------------------
     # Stage 3: Train
@@ -437,8 +453,9 @@ class Pipeline:
         if self._cancelled:
             return []
 
+        num_cycles = self.config.get("training", {}).get("num_cycles", 3)
         self._set_status(PipelineStatus.TRAINING)
-        self.metrics.total_cycles = self.config.get("training", {}).get("num_cycles", 3)
+        self.metrics.total_cycles = num_cycles
         self.metrics.progress_pct = 15.0
         self._emit()
 
@@ -459,33 +476,38 @@ class Pipeline:
                 self.metrics.history = history
             self._emit()
 
+        train_attrs = {
+            "training.num_cycles": str(num_cycles),
+            "model.name": self.config.get("model", {}).get("name", "unknown"),
+        }
         start = time.time()
-        try:
-            history = self._trainer.train(
-                train_dataloader=self._train_dl,
-                dream_dataloader=self._dream_dl,
-                nightmare_dataloader=self._nightmare_dl,
-                val_dataloader=self._val_dl,
-                on_progress=_on_train_progress,
-            )
+        with trace_phase("train", train_attrs):
+            try:
+                history = self._trainer.train(
+                    train_dataloader=self._train_dl,
+                    dream_dataloader=self._dream_dl,
+                    nightmare_dataloader=self._nightmare_dl,
+                    val_dataloader=self._val_dl,
+                    on_progress=_on_train_progress,
+                )
 
-            # Update metrics from history
-            self.metrics.history = history
-            if history:
-                last = history[-1]
-                self.metrics.current_cycle = last.get("cycle", 0)
-                self.metrics.current_phase = last.get("phase", "")
-                self.metrics.phase_loss = last.get("avg_loss", 0.0)
+                # Update metrics from history
+                self.metrics.history = history
+                if history:
+                    last = history[-1]
+                    self.metrics.current_cycle = last.get("cycle", 0)
+                    self.metrics.current_phase = last.get("phase", "")
+                    self.metrics.phase_loss = last.get("avg_loss", 0.0)
 
-            elapsed = time.time() - start
-            self.metrics.progress_pct = 85.0
-            self.metrics.eta_seconds = 0.0
-            self._emit()
-            logger.info("Training complete in %.1fs.", elapsed)
-            return history
-        except Exception as exc:
-            self._fail(f"Training failed: {exc}")
-            raise
+                elapsed = time.time() - start
+                self.metrics.progress_pct = 85.0
+                self.metrics.eta_seconds = 0.0
+                self._emit()
+                logger.info("Training complete in %.1fs.", elapsed)
+                return history
+            except Exception as exc:
+                self._fail(f"Training failed: {exc}")
+                raise
 
     # ------------------------------------------------------------------
     # Stage 4: Evaluate
@@ -505,61 +527,72 @@ class Pipeline:
         self.metrics.current_phase = "evaluate"
         self._emit()
 
-        try:
-            evaluator = Evaluator(
-                model=self._trainer.model,
-                tokenizer=self._trainer.tokenizer,
-                config=self.config,
-                device=str(self._trainer.device),
-            )
+        eval_attrs = {"model.name": self.config.get("model", {}).get("name", "unknown")}
+        with trace_phase("evaluate", eval_attrs):
+            try:
+                evaluator = Evaluator(
+                    model=self._trainer.model,
+                    tokenizer=self._trainer.tokenizer,
+                    config=self.config,
+                    device=str(self._trainer.device),
+                )
 
-            # Evaluate trained model
-            trained_results = evaluator.evaluate(
-                clean_dataloader=self._train_dl,
-                label="nightmarenet-trained",
-            )
-            self.metrics.trained_results = trained_results
+                # Evaluate trained model
+                trained_results = evaluator.evaluate(
+                    clean_dataloader=self._train_dl,
+                    label="nightmarenet-trained",
+                )
+                self.metrics.trained_results = trained_results
 
-            # Evaluate baseline model (pre-training snapshot)
-            baseline_evaluator = Evaluator(
-                model=self._baseline_model,
-                tokenizer=self._trainer.tokenizer,
-                config=self.config,
-                device=str(self._trainer.device),
-            )
-            baseline_results = baseline_evaluator.evaluate(
-                clean_dataloader=self._train_dl,
-                label="baseline",
-            )
-            self.metrics.baseline_results = baseline_results
+                # Evaluate baseline model (pre-training snapshot)
+                baseline_evaluator = Evaluator(
+                    model=self._baseline_model,
+                    tokenizer=self._trainer.tokenizer,
+                    config=self.config,
+                    device=str(self._trainer.device),
+                )
+                baseline_results = baseline_evaluator.evaluate(
+                    clean_dataloader=self._train_dl,
+                    label="baseline",
+                )
+                self.metrics.baseline_results = baseline_results
 
-            # Generate comparison
-            comparison = evaluator.compare(baseline_results, trained_results)
-            self.metrics.comparison = comparison
+                # Generate comparison
+                comparison = evaluator.compare(baseline_results, trained_results)
+                self.metrics.comparison = comparison
 
-            # Generate markdown report
-            report = evaluator.generate_report(comparison)
-            self.metrics.report_md = report
+                # Generate markdown report
+                report = evaluator.generate_report(comparison)
+                self.metrics.report_md = report
 
-            # Save results
-            results_dict = {
-                "baseline": baseline_results,
-                "trained": trained_results,
-                "comparison": comparison,
-            }
-            evaluator.save_results(results_dict)
+                # Save results
+                results_dict = {
+                    "baseline": baseline_results,
+                    "trained": trained_results,
+                    "comparison": comparison,
+                }
+                evaluator.save_results(results_dict)
 
-            self.metrics.progress_pct = 100.0
-            self.metrics.current_phase = "complete"
-            self._set_status(PipelineStatus.COMPLETE)
-            logger.info("Evaluation complete.")
+                self.metrics.progress_pct = 100.0
+                self.metrics.current_phase = "complete"
+                self._set_status(PipelineStatus.COMPLETE)
+                logger.info("Evaluation complete.")
 
-            self._compute_quality_feedback(comparison)
+                self._compute_quality_feedback(comparison)
 
-            return comparison
-        except Exception as exc:
-            self._fail(f"Evaluation failed: {exc}")
-            raise
+                # Export robustness delta as an OTel metric
+                robustness_delta = comparison.get("robustness_delta")
+                if robustness_delta is not None:
+                    record_metric(
+                        "robustness_score",
+                        float(robustness_delta),
+                        {"model": self.config.get("model", {}).get("name", "unknown")},
+                    )
+
+                return comparison
+            except Exception as exc:
+                self._fail(f"Evaluation failed: {exc}")
+                raise
 
     def _compute_quality_feedback(self, comparison: dict) -> None:
         """Correlate Adaption quality with robustness improvement."""

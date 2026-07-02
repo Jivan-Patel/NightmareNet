@@ -89,6 +89,18 @@ tracking:
   output_dir: "results"
   output_format: "json"  # "json" or "markdown"
 
+# Observability — structured logging and OpenTelemetry
+# Install optional extras: pip install nightmarenet[otel]
+observability:
+  json_logs: false              # Emit JSON-structured log lines (requires python-json-logger)
+  log_level: INFO               # Logging level: DEBUG | INFO | WARNING | ERROR | CRITICAL
+  otel_endpoint: null           # gRPC OTLP receiver, e.g. http://localhost:4317
+                                # Set to null to disable tracing (no-op, zero overhead)
+  otel_service_name: nightmarenet  # Service name tag in traces and metrics
+  otel_export_interval_ms: 5000    # How often metrics are flushed to the endpoint
+  # Compatible backends (via OTLP): Jaeger, Grafana Tempo, Honeycomb,
+  #   Datadog Agent, Azure Monitor, Prometheus (via OTel Collector)
+
 # Reproducibility
 seed: 42
 
