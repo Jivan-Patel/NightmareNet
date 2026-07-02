@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from nightmarenet import __version__
+
 
 def cmd_train(args: argparse.Namespace) -> int:
     """Run the full 4-phase training pipeline."""
@@ -165,6 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nightmarenet",
         description="NightmareNet — Autonomous AI Self-Improvement Platform",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show the installed nightmarenet version and exit",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
