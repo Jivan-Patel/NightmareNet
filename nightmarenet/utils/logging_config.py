@@ -36,7 +36,9 @@ def _build_formatter(json_logs: bool) -> logging.Formatter:
             try:
                 from pythonjsonlogger.json import JsonFormatter  # type: ignore[import-untyped]
             except ImportError:
-                from pythonjsonlogger.jsonlogger import JsonFormatter  # type: ignore[import-untyped]
+                from pythonjsonlogger.jsonlogger import (
+                    JsonFormatter,  # type: ignore[import-untyped]
+                )
 
             return JsonFormatter(
                 fmt="%(asctime)s %(levelname)s %(name)s %(message)s",

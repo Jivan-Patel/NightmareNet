@@ -13,11 +13,15 @@ from __future__ import annotations
 import json
 import logging
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from nightmarenet.utils.logging_config import reset_logging, setup_logging, setup_logging_from_config
+from nightmarenet.utils.logging_config import (
+    reset_logging,
+    setup_logging,
+    setup_logging_from_config,
+)
 from nightmarenet.utils.telemetry import (
     _NoOpSpan,
     _NoOpTracer,
@@ -27,7 +31,6 @@ from nightmarenet.utils.telemetry import (
     setup_telemetry,
     trace_phase,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -213,7 +216,8 @@ class TestJsonLogging:
 
     def test_json_logs_fallback_when_package_missing(self):
         """When python-json-logger is absent, setup_logging falls back silently."""
-        with patch.dict("sys.modules", {"pythonjsonlogger": None, "pythonjsonlogger.jsonlogger": None}):
+        mock_modules = {"pythonjsonlogger": None, "pythonjsonlogger.jsonlogger": None}
+        with patch.dict("sys.modules", mock_modules):
             # Should not raise even if the package is unavailable
             setup_logging(log_dir="/tmp", file_logging=False, json_logs=True)
 
