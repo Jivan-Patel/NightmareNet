@@ -183,6 +183,9 @@ class Trainer:
 
         # Interrupt flag
         self._interrupted = False
+        
+        # External stop request (e.g. adaptive termination)
+        self._stop_requested = False
 
         # Checkpoint directory
         self.checkpoint_dir = self.training_config.get("checkpoint_dir", "checkpoints")
@@ -221,6 +224,11 @@ class Trainer:
         """Handle SIGINT by flagging for a graceful checkpoint save."""
         logger.warning("Received interrupt signal, will save checkpoint and stop.")
         self._interrupted = True
+
+    def request_stop(self) -> None:
+        """Request graceful termination after the current phase."""
+        logger.info("External stop requested.")
+        self._stop_requested = True
 
     def _save_checkpoint(self, cycle: int, phase: str):
         """Save a model checkpoint after a phase."""
@@ -295,6 +303,10 @@ class Trainer:
         try:
             for cycle, phase, num_epochs in self.scheduler:
                 if self._interrupted:
+                    break
+                
+                if self._stop_requested:
+                    logger.info("Training stop requested. Terminating after cycle %d.", cycle+1)
                     break
                 # Early stopping check
                 if hasattr(self.scheduler, 'should_stop') and self.scheduler.should_stop:
@@ -419,6 +431,20 @@ class Trainer:
 
                 # Log metrics
                 logger.info("Phase result: %s", json.dumps(result, indent=2, default=str))
+                 
+                # Notify pipeline that a full training cycle has completed
+                if phase == "compress" and on_progress is not None:
+                    try:
+                        on_progress(
+                            {
+                                "event": "cycle_end",
+                                "cycle": cycle,
+                                "phase": phase,
+                                "history": list(self.history),
+                            }
+                        )
+                    except Exception:
+                        logger.debug("on_progress callback failed", exc_info=True)
         except KeyboardInterrupt:
             logger.warning("Training interrupted by KeyboardInterrupt.")
         finally:
@@ -427,7 +453,7 @@ class Trainer:
                 logger.info("Training interrupted, checkpoint saved.")
             if prev_handler is not None:
                 signal.signal(signal.SIGINT, prev_handler)
-
+            
         # Save final model and history
         final_path = os.path.join(self.checkpoint_dir, "final")
         os.makedirs(final_path, exist_ok=True)
@@ -445,7 +471,6 @@ class Trainer:
         self.tracker.finish()
         logger.info("Training complete. Final model saved to %s", final_path)
         return self.history
-
 
 def create_trainer_from_config(config: dict, model=None, tokenizer=None) -> Trainer:
     """Create a Trainer instance from a configuration dictionary.
