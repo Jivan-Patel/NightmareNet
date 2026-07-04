@@ -254,6 +254,16 @@ class DemoResponse(BaseModel):
 # --- Pipeline Schemas ---
 
 
+class WebhookConfigSchema(BaseModel):
+    """Configuration for a webhook subscription."""
+
+    url: str = Field(..., description="The webhook URL.")
+    events: list[str] = Field(
+        default_factory=list,
+        description="Events to subscribe to: run_complete, regression_detected, alert, deploy",
+    )
+
+
 class PipelineCreateRequest(BaseModel):
     """Request body for creating a new end-to-end pipeline run."""
 
@@ -302,6 +312,10 @@ class PipelineCreateRequest(BaseModel):
     )
     dream_strength: float = Field(default=0.25, ge=0.0, le=1.0)
     nightmare_strength: float = Field(default=0.8, ge=0.0, le=1.0)
+    webhooks: Optional[list[WebhookConfigSchema]] = Field(
+        default=None,
+        description="Optional list of webhooks to trigger during pipeline events.",
+    )
 
 
 class PipelineStatusResponse(BaseModel):
@@ -327,4 +341,14 @@ class PipelineReportResponse(BaseModel):
     run_id: str
     report_md: str
     comparison: Optional[dict[str, Any]] = None
+
+
+class TestWebhookRequest(BaseModel):
+    """Request body for testing a webhook URL."""
+
+    url: str = Field(..., description="The webhook endpoint URL.")
+    event_type: str = Field(
+        default="run_complete",
+        description="Event type to test: run_complete, regression_detected, alert, deploy",
+    )
 

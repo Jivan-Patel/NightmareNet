@@ -206,6 +206,27 @@ export default function PipelineLab() {
       dream_strength: dreamStrength,
       nightmare_strength: nightmareStrength,
     };
+
+    // Retrieve webhooks from localStorage if configured
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("nightmarenet-webhooks");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            req.webhooks = parsed
+              .map((wh: any) => ({
+                url: wh.url || "",
+                events: wh.events || [],
+              }))
+              .filter((wh) => wh.url);
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+    }
+
     if (sourceType === "urls") {
       req.urls = urls.split("\n").map(u => u.trim()).filter(Boolean);
     } else if (sourceType === "huggingface") {
