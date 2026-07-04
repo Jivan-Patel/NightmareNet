@@ -38,7 +38,7 @@ class TransferFineTuner:
 
     def _freeze_layers(self, freeze_bottom_n: int) -> bool:
         """Freeze the bottom N layers of the backbone.
-        
+
         Supported architectures: BERT-like (encoder.layer) and GPT-like (transformer.h).
         Returns True if layers were successfully found and frozen, False otherwise.
         """

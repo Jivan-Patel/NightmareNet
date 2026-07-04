@@ -204,13 +204,15 @@ def cmd_transfer(args: argparse.Namespace) -> int:
 
             if "robustness_score" not in t_data or "clean_accuracy" not in t_data:
                 print(
-                    "Error: transferred JSON is missing required keys ('robustness_score', 'clean_accuracy')",
+                    "Error: transferred JSON is missing required keys "
+                    "('robustness_score', 'clean_accuracy')",
                     file=sys.stderr
                 )
                 return 1
             if "robustness_score" not in b_data or "clean_accuracy" not in b_data:
                 print(
-                    "Error: baseline JSON is missing required keys ('robustness_score', 'clean_accuracy')",
+                    "Error: baseline JSON is missing required keys "
+                    "('robustness_score', 'clean_accuracy')",
                     file=sys.stderr
                 )
                 return 1
