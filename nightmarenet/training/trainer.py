@@ -34,6 +34,7 @@ from nightmarenet.training.phases import (
 )
 from nightmarenet.training.scheduler import create_scheduler_from_config
 from nightmarenet.utils.tracking import create_tracker_from_config
+from nightmarenet.utils.webhooks import check_vram_pressure, trigger_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -421,33 +422,33 @@ class Trainer:
                 self._save_checkpoint(cycle, phase)
 
                 # Check GPU VRAM pressure
-                from nightmarenet.utils.webhooks import check_vram_pressure, trigger_webhook
-                device_idx = self.device.index if self.device.index is not None else 0
-                has_pressure = check_vram_pressure(device_idx, threshold=0.85)
-                if not getattr(self, "_vram_alert_sent", False) and has_pressure:
-                    self._vram_alert_sent = True
-                    import torch
-                    try:
-                        free, total = torch.cuda.mem_get_info(device_idx)
-                        used = total - free
-                        pct = (used / total) * 100.0
-                        gpu_name = torch.cuda.get_device_name(device_idx)
-                        trigger_webhook(
-                            self.config,
-                            "alert",
-                            f"GPU VRAM pressure detected: {pct:.1f}% used on {gpu_name}.",
-                            {
-                                "run_id": getattr(self, "run_id", "unknown"),
-                                "gpu": gpu_name,
-                                "used_vram": f"{used / (1024**2):.1f} MB",
-                                "total_vram": f"{total / (1024**2):.1f} MB",
-                                "usage_percent": f"{pct:.1f}%",
-                                "cycle": cycle + 1,
-                                "phase": phase,
-                            }
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to record VRAM alert details: %s", e)
+                if self.device.type == "cuda":
+                    device_idx = self.device.index if self.device.index is not None else 0
+                    has_pressure = check_vram_pressure(device_idx, threshold=0.85)
+                    if not getattr(self, "_vram_alert_sent", False) and has_pressure:
+                        self._vram_alert_sent = True
+                        import torch
+                        try:
+                            free, total = torch.cuda.mem_get_info(device_idx)
+                            used = total - free
+                            pct = (used / total) * 100.0
+                            gpu_name = torch.cuda.get_device_name(device_idx)
+                            trigger_webhook(
+                                self.config,
+                                "alert",
+                                f"GPU VRAM pressure detected: {pct:.1f}% used on {gpu_name}.",
+                                {
+                                    "run_id": getattr(self, "run_id", "unknown"),
+                                    "gpu": gpu_name,
+                                    "used_vram": f"{used / (1024**2):.1f} MB",
+                                    "total_vram": f"{total / (1024**2):.1f} MB",
+                                    "usage_percent": f"{pct:.1f}%",
+                                    "cycle": cycle + 1,
+                                    "phase": phase,
+                                }
+                            )
+                        except Exception as e:
+                            logger.warning("Failed to record VRAM alert details: %s", e)
 
                 # Log metrics
                 logger.info("Phase result: %s", json.dumps(result, indent=2, default=str))

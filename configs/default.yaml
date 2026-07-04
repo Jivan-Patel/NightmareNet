@@ -101,6 +101,12 @@ observability:
   # Compatible backends (via OTLP): Jaeger, Grafana Tempo, Honeycomb,
   #   Datadog Agent, Azure Monitor, Prometheus (via OTel Collector)
 
+# Webhook notifications (optional)
+# notifications:
+#   webhooks:
+#     - url: "https://hooks.slack.com/services/T/B/X"
+#       events: ["run_complete", "regression_detected", "alert", "deploy"]
+
 # Reproducibility
 seed: 42
 

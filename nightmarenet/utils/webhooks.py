@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
@@ -40,7 +42,7 @@ def trigger_webhook(
         try:
             _send_webhook_request(url, event_type, message, details or {})
         except Exception as e:
-            logger.exception("Failed to send webhook notification to %s: %s", url, e)
+            logger.warning("Failed to send webhook notification to %s: %s", url, e)
 
 
 def _send_webhook_request(url: str, event_type: str, message: str, details: Dict[str, Any]) -> None:
@@ -130,8 +132,23 @@ def _send_webhook_request(url: str, event_type: str, message: str, details: Dict
         data=data,
         headers={"Content-Type": "application/json", "User-Agent": "NightmareNet-Webhook/0.2.0"},
     )
-    with urllib.request.urlopen(req, timeout=5) as response:
-        response.read()
+    
+    max_retries = 1
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                response.read()
+            return
+        except urllib.error.HTTPError as e:
+            if e.code == 429 or (500 <= e.code < 600):
+                if attempt < max_retries:
+                    logger.warning(
+                        "Webhook request to %s failed with status %d. Retrying in 2 seconds...",
+                        url, e.code
+                    )
+                    time.sleep(2)
+                    continue
+            raise e
 
 
 def check_vram_pressure(device_index: int = 0, threshold: float = 0.85) -> bool:

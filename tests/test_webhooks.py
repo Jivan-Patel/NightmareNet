@@ -194,3 +194,52 @@ def test_test_webhook_endpoint(mock_urlopen):
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert mock_urlopen.call_count == 1
+
+
+import urllib.error
+
+
+@patch("urllib.request.urlopen")
+@patch("time.sleep")
+def test_webhook_retry_success(mock_sleep, mock_urlopen):
+    """Verify that a transient error (e.g., 429) triggers a retry and succeeds."""
+    mock_err_response = urllib.error.HTTPError(
+        url="https://example.com/webhook",
+        code=429,
+        msg="Too Many Requests",
+        hdrs=None,
+        fp=None,
+    )
+
+    # First call raises 429, second succeeds
+    mock_urlopen.side_effect = [mock_err_response, MagicMock(read=MagicMock(return_value=b""))]
+
+    url = "https://example.com/webhook"
+    _send_webhook_request(url, "run_complete", "Retry test message", {})
+
+    assert mock_urlopen.call_count == 2
+    assert mock_sleep.call_count == 1
+    mock_sleep.assert_called_with(2)
+
+
+@patch("urllib.request.urlopen")
+@patch("time.sleep")
+def test_webhook_retry_fail(mock_sleep, mock_urlopen):
+    """Verify that a permanent error (e.g., 400) does not retry."""
+    mock_err_response = urllib.error.HTTPError(
+        url="https://example.com/webhook",
+        code=400,
+        msg="Bad Request",
+        hdrs=None,
+        fp=None,
+    )
+
+    mock_urlopen.side_effect = mock_err_response
+
+    url = "https://example.com/webhook"
+    import pytest
+    with pytest.raises(urllib.error.HTTPError):
+        _send_webhook_request(url, "run_complete", "Failure test message", {})
+
+    assert mock_urlopen.call_count == 1
+    assert mock_sleep.call_count == 0

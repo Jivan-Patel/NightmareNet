@@ -20,6 +20,7 @@ from nightmarenet.evaluation.evaluator import Evaluator
 from nightmarenet.training.trainer import Trainer, _tokenize_dataset
 from nightmarenet.utils.config import load_config
 from nightmarenet.utils.telemetry import record_metric, setup_telemetry, trace_phase
+from nightmarenet.utils.webhooks import trigger_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,6 @@ class Pipeline:
         self.metrics.error = error
         self._emit()
 
-        from nightmarenet.utils.webhooks import trigger_webhook
         trigger_webhook(
             self.config,
             "run_complete",
@@ -598,8 +598,6 @@ class Pipeline:
                 self._compute_quality_feedback(comparison)
 
                 # Trigger webhook for run_complete (success)
-                from nightmarenet.utils.webhooks import trigger_webhook
-
                 robustness_metric = comparison.get("metrics", {}).get("robustness", {})
                 robustness_delta = robustness_metric.get("deltas", {}).get("auc_robustness")
                 if robustness_delta is None:

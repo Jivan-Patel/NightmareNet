@@ -248,6 +248,7 @@ export interface PipelineCreateRequest {
   max_samples?: number;
   dream_strength?: number;
   nightmare_strength?: number;
+  webhooks?: { url: string; events: string[] }[];
 }
 
 export interface PipelineStatusResponse {

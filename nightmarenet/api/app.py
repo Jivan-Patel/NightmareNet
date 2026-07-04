@@ -884,6 +884,11 @@ async def create_pipeline(
         },
         "tracking": {"backend": "none"},
         "seed": 42,
+        "notifications": {
+            "webhooks": [
+                {"url": wh.url, "events": wh.events} for wh in body.webhooks
+            ] if body.webhooks else [],
+        },
     }
 
     pipeline = Pipeline(config=config)
