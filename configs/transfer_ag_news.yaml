@@ -1,0 +1,16 @@
+# Robustness Transfer Learning Config: SST-2 to AG News
+# This configuration takes a foundation backbone (e.g. trained on SST-2)
+# and fine-tunes it on the AG News task while freezing the bottom layers
+# to preserve the robustness learned by the foundation model.
+
+task_type: "seq_classification"
+dataset: "ag_news"
+num_labels: 4
+batch_size: 16
+num_epochs: 3
+freeze_bottom_n: 4
+unfreeze_after_epoch: 2
+learning_rate: 0.00003
+output_dir: "./output/transfer_ag_news"
+device: "cuda"
+strict_layer_freezing: true
