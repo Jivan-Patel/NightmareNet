@@ -195,6 +195,15 @@ class TestEdgeCases:
         with pytest.raises(ValueError, match="produced only 5 usable samples"):
             ingestor.from_text_content(content)
 
+    def test_minimum_samples_threshold_exact(self, ingestor):
+        """_finalise should NOT raise ValueError if resulting dataset has exactly _MIN_SAMPLES."""
+        content = "\n\n".join([
+            f"Paragraph {i}: This is valid and exactly enough samples to pass the threshold."
+            for i in range(10)
+        ])
+        ds = ingestor.from_text_content(content)
+        assert len(ds) == 10
+
 
 # ── URL ingestion ──
 
@@ -215,6 +224,18 @@ class TestUrlIngestion:
         mock_scraper_instance.scrape.assert_called_once_with(urls, chunk_size=256)
         assert len(ds) == 15
         assert "text" in ds.column_names
+
+    @patch("nightmarenet.data.ingest.WebScraper")
+    def test_from_urls_below_threshold_raises(self, mock_scraper_class, ingestor):
+        """from_urls should raise ValueError if scraper returns < 10 samples."""
+        mock_scraper_instance = mock_scraper_class.return_value
+        from datasets import Dataset
+        mock_ds = Dataset.from_dict({"text": [f"Valid sample {i} content" for i in range(5)]})
+        mock_scraper_instance.scrape.return_value = mock_ds
+
+        urls = ["http://example.com/1"]
+        with pytest.raises(ValueError, match="produced only 5 usable samples"):
+            ingestor.from_urls(urls)
 
 
 # ── HuggingFace Hub ingestion ──
