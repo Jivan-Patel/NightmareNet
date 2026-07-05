@@ -5,16 +5,36 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import yaml
+from pydantic import BaseModel, Field
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from nightmarenet.distortions.registry import get_registry
 from nightmarenet.evaluation.metrics import robustness_score
 
 logger = logging.getLogger(__name__)
+
+
+class DatasetConfig(BaseModel):
+    name: str = "sst2"
+    split: str = "validation"
+    max_samples: Optional[int] = 100
+    text_column: str = "sentence"
+
+
+class DistortionConfig(BaseModel):
+    type: str = "dream"
+    strengths: list[float] = Field(default_factory=lambda: [0.1, 0.3, 0.5, 0.7, 0.9])
+
+
+class EnsembleConfig(BaseModel):
+    models: list[str]
+    dataset: DatasetConfig = Field(default_factory=DatasetConfig)
+    distortions: list[DistortionConfig] = Field(default_factory=list)
+
 
 
 def _evaluate_model_worker(
@@ -96,7 +116,10 @@ class EnsembleOrchestrator:
     def __init__(self, config_path: str):
         self.config_path = config_path
         with open(config_path, encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+            raw_config = yaml.safe_load(f)
+        
+        # Validate with Pydantic
+        self.config = EnsembleConfig(**raw_config)
 
     def run(self, timeout_seconds: int = 300) -> dict[str, Any]:
         """Run the ensemble benchmark suite.
@@ -104,23 +127,21 @@ class EnsembleOrchestrator:
         Args:
             timeout_seconds: Maximum time (in seconds) to allow per model.
         """
-        models = self.config.get("models", [])
-        dataset_cfg = self.config.get("dataset", {})
-        ds_name = dataset_cfg.get("name", "sst2")
-        ds_split = dataset_cfg.get("split", "validation")
-        max_samples = dataset_cfg.get("max_samples", 100)
-        text_column = dataset_cfg.get("text_column", "sentence")
+        models = self.config.models
+        dataset_cfg = self.config.dataset
+        ds_name = dataset_cfg.name
+        ds_split = dataset_cfg.split
+        max_samples = dataset_cfg.max_samples
+        text_column = dataset_cfg.text_column
 
-        distortions = self.config.get("distortions", [])
+        distortions = self.config.distortions
 
-        # Simplify by picking the first distortion for benchmarking
-        # (could be expanded to loop over all distortions)
         if not distortions:
             distortion_type = "dream"
             strengths = [0.1, 0.3, 0.5, 0.7, 0.9]
         else:
-            distortion_type = distortions[0].get("type", "dream")
-            strengths = distortions[0].get("strengths", [0.1, 0.3, 0.5, 0.7, 0.9])
+            distortion_type = distortions[0].type
+            strengths = distortions[0].strengths
 
         results = {}
         models_summary = []

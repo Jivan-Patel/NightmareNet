@@ -110,7 +110,7 @@ def test_ensemble_orchestrator_logic(mock_executor_class):
         
     try:
         orchestrator = EnsembleOrchestrator(temp_config)
-        assert orchestrator.config["models"] == ["dummy"]
+        assert orchestrator.config.models == ["dummy"]
         
         results = orchestrator.run()
         assert "models_summary" in results
