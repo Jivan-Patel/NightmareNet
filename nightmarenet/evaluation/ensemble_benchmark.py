@@ -47,7 +47,7 @@ def _evaluate_model_worker(
     strengths: list[float],
 ) -> dict[str, Any]:
     """Worker function to evaluate a single model.
-    
+
     Runs in a separate process to ensure memory is freed after execution.
     """
     from datasets import load_dataset
@@ -117,13 +117,13 @@ class EnsembleOrchestrator:
         self.config_path = config_path
         with open(config_path, encoding="utf-8") as f:
             raw_config = yaml.safe_load(f)
-        
+
         # Validate with Pydantic
         self.config = EnsembleConfig(**raw_config)
 
     def run(self, timeout_seconds: int = 300) -> dict[str, Any]:
         """Run the ensemble benchmark suite.
-        
+
         Args:
             timeout_seconds: Maximum time (in seconds) to allow per model.
         """
