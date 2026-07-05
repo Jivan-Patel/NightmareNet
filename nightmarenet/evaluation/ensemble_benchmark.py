@@ -117,10 +117,8 @@ def _evaluate_model_worker(
                 metrics = classification_metrics(model, dataloader, device=device)
                 accuracies.append(metrics.get("accuracy", 0.0))
 
-            _trapz_fn = getattr(np, "trapezoid", None)
-            if _trapz_fn is None:
-                _trapz_fn = np.trapz
-            auc = float(_trapz_fn(accuracies, strengths))
+            from sklearn.metrics import auc as sklearn_auc
+            auc = float(sklearn_auc(strengths, accuracies))
             total_auc += auc
 
             results_by_distortion[distortion_type] = {
