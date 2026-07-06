@@ -246,12 +246,19 @@ class Trainer:
         self.tokenizer.save_pretrained(path)
 
         # Save training state
+        import time
+
         state = {
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scaler_state_dict": self.scaler.state_dict() if self.scaler is not None else None,
             "cycle": cycle,
             "phase": phase,
             "history": self.history,
+            "metadata": {
+                "timestamp": time.time(),
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                "trainer_class": self.__class__.__name__,
+            },
         }
         torch.save(state, os.path.join(path, "training_state.pt"))
         logger.info("Checkpoint saved: %s (including training state)", path)
@@ -317,27 +324,80 @@ class Trainer:
             state_path = os.path.join(resume_from, "training_state.pt")
             if os.path.exists(state_path):
                 logger.info("Resuming training state from %s", state_path)
-                state = torch.load(state_path, map_location=self.device)
-                self.optimizer.load_state_dict(state["optimizer_state_dict"])
-                if self.scaler is not None and state.get("scaler_state_dict") is not None:
-                    self.scaler.load_state_dict(state["scaler_state_dict"])
-                self.history = state.get("history", [])
-                completed_phases = len(self.history)
+                import copy
+                import pickle
 
-                start_cycle = state.get("cycle", 0)
-                start_phase = state.get("phase")
-                if start_phase:
-                    if hasattr(self.scheduler, "base_scheduler"):
-                        self.scheduler.base_scheduler.start_cycle = start_cycle
-                        self.scheduler.base_scheduler.start_phase = start_phase
-                    else:
-                        self.scheduler.start_cycle = start_cycle
-                        self.scheduler.start_phase = start_phase
-                    logger.info(
-                        "Scheduler configured to resume after cycle %d, phase %s",
-                        start_cycle,
-                        start_phase,
+                state = None
+                try:
+                    state = torch.load(state_path, map_location=self.device)
+                except (pickle.PickleError, KeyError, RuntimeError) as e:
+                    logger.error(
+                        "Failed to load training state from %s: %s. "
+                        "Continuing with fresh history.",
+                        state_path,
+                        e,
                     )
+
+                if state is not None:
+                    # Validate optimizer state dict compatibility
+                    saved_opt = state.get("optimizer_state_dict")
+                    if saved_opt and "param_groups" in saved_opt:
+                        saved_groups = len(saved_opt["param_groups"])
+                        current_groups = len(self.optimizer.param_groups)
+                        if saved_groups != current_groups:
+                            logger.warning(
+                                "Optimizer param group count mismatch (saved: %d, current: %d). "
+                                "Skipping loading optimizer state.",
+                                saved_groups,
+                                current_groups,
+                            )
+                        else:
+                            try:
+                                self.optimizer.load_state_dict(saved_opt)
+                            except Exception as opt_err:
+                                logger.warning(
+                                    "Failed to load optimizer state dict: %s", opt_err
+                                )
+
+                    if self.scaler is not None and state.get("scaler_state_dict") is not None:
+                        try:
+                            self.scaler.load_state_dict(state["scaler_state_dict"])
+                        except Exception as scaler_err:
+                            logger.warning("Failed to load scaler state dict: %s", scaler_err)
+
+                    self.history = copy.deepcopy(state.get("history", []))
+                    completed_phases = len(self.history)
+
+                    start_cycle = state.get("cycle", 0)
+                    start_phase = state.get("phase")
+
+                    # Validate resume point
+                    valid_phases = ["wake", "dream", "nightmare", "compress"]
+                    if hasattr(self.scheduler, "PHASE_ORDER"):
+                        valid_phases = self.scheduler.PHASE_ORDER
+                    elif hasattr(self.scheduler, "base_scheduler") and hasattr(
+                        self.scheduler.base_scheduler, "PHASE_ORDER"
+                    ):
+                        valid_phases = self.scheduler.base_scheduler.PHASE_ORDER
+
+                    if start_phase not in valid_phases:
+                        raise ValueError(
+                            f"Corrupted start_phase '{start_phase}' in checkpoint state. "
+                            f"Must be one of {valid_phases}"
+                        )
+
+                    if start_phase:
+                        if hasattr(self.scheduler, "base_scheduler"):
+                            self.scheduler.base_scheduler.start_cycle = start_cycle
+                            self.scheduler.base_scheduler.start_phase = start_phase
+                        else:
+                            self.scheduler.start_cycle = start_cycle
+                            self.scheduler.start_phase = start_phase
+                        logger.info(
+                            "Scheduler configured to resume after cycle %d, phase %s",
+                            start_cycle,
+                            start_phase,
+                        )
             else:
                 logger.warning(
                     "resume_from path specified but training_state.pt not found: %s",

@@ -11,6 +11,25 @@ from nightmarenet.training.scheduler import CyclicScheduler
 from nightmarenet.training.trainer import Trainer
 
 
+@pytest.fixture(scope="module")
+def shared_model_and_tokenizer():
+    """Returns a tiny GPT-2 model and tokenizer to keep tests fast and memory-efficient."""
+    import transformers
+    tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+
+    # Configuration for a tiny, zero-resource model
+    config = transformers.GPT2Config(
+        n_layer=1,
+        n_head=1,
+        n_embd=4,
+        n_inner=4,
+        vocab_size=len(tokenizer),
+    )
+    model = transformers.GPT2LMHeadModel(config)
+    return model, tokenizer
+
+
 def _make_tiny_dataset(n: int = 10) -> Dataset:
     texts = [
         "The quick brown fox jumps over the lazy dog.",
@@ -112,10 +131,10 @@ def test_scheduler_resume_offset():
     assert phases2[0] == (1, "nightmare", 1)
 
 
-def test_trainer_save_and_load_state(minimal_config, tmp_path):
+def test_trainer_save_and_load_state(minimal_config, shared_model_and_tokenizer):
     """Test that checkpoint saving preserves optimizer, scaler, scheduler state, and history."""
-    pytest.importorskip("transformers")
-    trainer = Trainer(config=minimal_config)
+    model, tokenizer = shared_model_and_tokenizer
+    trainer = Trainer(config=minimal_config, model=model, tokenizer=tokenizer)
 
     # Checkpoint path
     path = os.path.join(trainer.checkpoint_dir, "cycle0_wake")
@@ -134,20 +153,20 @@ def test_trainer_save_and_load_state(minimal_config, tmp_path):
     assert state["cycle"] == 0
     assert state["phase"] == "wake"
     assert state["history"] == [{"phase": "wake", "avg_loss": 1.23, "cycle": 0}]
+    assert "metadata" in state
+    assert state["metadata"]["trainer_class"] == "Trainer"
 
 
-def test_trainer_resume_execution(minimal_config, tmp_path):
+def test_trainer_resume_execution(minimal_config, shared_model_and_tokenizer):
     """Test training resume end-to-end with a dummy loop."""
-    transformers = pytest.importorskip("transformers")
-    tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    model, tokenizer = shared_model_and_tokenizer
 
     base_ds = _make_tiny_dataset(4)
     train_ds = _tokenize_dataset(base_ds, tokenizer)
     loader = DataLoader(train_ds, batch_size=2)
 
     # Step 1: Initialize first trainer run
-    trainer1 = Trainer(config=minimal_config)
+    trainer1 = Trainer(config=minimal_config, model=model, tokenizer=tokenizer)
     trainer1.history = [{"phase": "wake", "avg_loss": 2.5, "cycle": 0}]
 
     # Save checkpoint manually at cycle 0 wake
@@ -159,7 +178,11 @@ def test_trainer_resume_execution(minimal_config, tmp_path):
     resume_config["training"] = minimal_config["training"].copy()
     resume_config["training"]["resume_from"] = checkpoint_path
 
-    trainer2 = Trainer(config=resume_config)
+    trainer2 = Trainer(
+        config=resume_config,
+        model=model,
+        tokenizer=tokenizer,
+    )
 
     # Run train with short loaders
     history = trainer2.train(
@@ -181,3 +204,243 @@ def test_trainer_resume_execution(minimal_config, tmp_path):
     assert history[0]["avg_loss"] == 2.5
     assert history[1]["phase"] == "dream"
     assert history[-1]["phase"] == "compress"
+
+
+def test_trainer_resume_corrupted_phase(minimal_config, shared_model_and_tokenizer):
+    """Test that a ValueError is raised if the checkpoint phase is corrupted or unknown."""
+    model, tokenizer = shared_model_and_tokenizer
+    trainer = Trainer(config=minimal_config, model=model, tokenizer=tokenizer)
+    path = os.path.join(trainer.checkpoint_dir, "cycle0_wake")
+
+    # Save a checkpoint with a corrupted phase
+    trainer.history = [{"phase": "wake", "avg_loss": 1.0, "cycle": 0}]
+    trainer._save_checkpoint(cycle=0, phase="wake")
+    state_file = os.path.join(path, "training_state.pt")
+
+    state = torch.load(state_file, map_location="cpu")
+    state["phase"] = "corrupted_phase_name"
+    torch.save(state, state_file)
+
+    # Attempt to load state in a new trainer should raise ValueError
+    resume_config = minimal_config.copy()
+    resume_config["training"] = minimal_config["training"].copy()
+    resume_config["training"]["resume_from"] = path
+
+    # We mock loaders to trigger train load
+    base_ds = _make_tiny_dataset(4)
+    train_ds = _tokenize_dataset(base_ds, tokenizer)
+    loader = DataLoader(train_ds, batch_size=2)
+
+    trainer2 = Trainer(
+        config=resume_config,
+        model=model,
+        tokenizer=tokenizer,
+    )
+    with pytest.raises(ValueError, match="Corrupted start_phase 'corrupted_phase_name'"):
+        trainer2.train(
+            train_dataloader=loader,
+            dream_dataloader=loader,
+            nightmare_dataloader=loader,
+            val_dataloader=loader
+        )
+
+
+def test_amp_scaler_save_load(minimal_config, shared_model_and_tokenizer):
+    """Test that AMP scaler state is correctly saved and loaded when use_amp is True."""
+    model, tokenizer = shared_model_and_tokenizer
+    config = minimal_config.copy()
+    config["training"] = minimal_config["training"].copy()
+    config["training"]["use_amp"] = True
+
+    trainer = Trainer(config=config, model=model, tokenizer=tokenizer)
+    trainer.use_amp = True
+    trainer.scaler = torch.cuda.amp.GradScaler()
+
+    # Mock state dict to simulate a scaler state
+    trainer.scaler.state_dict = lambda: {"scale": 128.0, "growth_tracker": 1}
+
+    path = os.path.join(trainer.checkpoint_dir, "cycle0_wake")
+    trainer._save_checkpoint(cycle=0, phase="wake")
+    state_file = os.path.join(path, "training_state.pt")
+    assert os.path.exists(state_file)
+
+    # Load and verify
+    state = torch.load(state_file, map_location="cpu")
+    assert "scaler_state_dict" in state
+    assert state["scaler_state_dict"]["scale"] == 128.0
+
+    # Test loading
+    resume_config = config.copy()
+    resume_config["training"]["resume_from"] = path
+    trainer2 = Trainer(
+        config=resume_config,
+        model=model,
+        tokenizer=tokenizer,
+    )
+    trainer2.use_amp = True
+    trainer2.scaler = torch.cuda.amp.GradScaler()
+
+    # Mock load_state_dict to capture what was loaded
+    loaded_scale = None
+
+    def mock_load_state_dict(sd):
+        nonlocal loaded_scale
+        loaded_scale = sd.get("scale")
+    trainer2.scaler.load_state_dict = mock_load_state_dict
+
+    # We mock loaders to trigger train load
+    base_ds = _make_tiny_dataset(4)
+    train_ds = _tokenize_dataset(base_ds, tokenizer)
+    loader = DataLoader(train_ds, batch_size=2)
+
+    trainer2.train(
+        train_dataloader=loader,
+        dream_dataloader=loader,
+        nightmare_dataloader=loader,
+        val_dataloader=loader
+    )
+
+    # Scale should be loaded from checkpoint
+    assert loaded_scale == 128.0
+
+
+def test_chained_resume_execution(minimal_config, shared_model_and_tokenizer):
+    """Test that multiple sequential resumes (chaining) work and accumulate history correctly."""
+    model, tokenizer = shared_model_and_tokenizer
+
+    base_ds = _make_tiny_dataset(4)
+    train_ds = _tokenize_dataset(base_ds, tokenizer)
+    loader = DataLoader(train_ds, batch_size=2)
+
+    # Start config with 3 cycles
+    config = minimal_config.copy()
+    config["training"] = minimal_config["training"].copy()
+    config["training"]["num_cycles"] = 3
+
+    # Run 1: Start from scratch, run first phase (wake) and stop (interrupt)
+    trainer1 = Trainer(config=config, model=model, tokenizer=tokenizer)
+
+    def on_progress1(event):
+        if event["status"] == "phase_end" and event["phase"] == "wake" and event["cycle"] == 0:
+            trainer1._interrupted = True
+
+    trainer1.train(
+        train_dataloader=loader,
+        dream_dataloader=loader,
+        nightmare_dataloader=loader,
+        val_dataloader=loader,
+        on_progress=on_progress1
+    )
+    assert len(trainer1.history) == 1
+    assert trainer1.history[0]["phase"] == "wake"
+    chk_a = os.path.join(trainer1.checkpoint_dir, "cycle0_wake")
+    assert os.path.exists(chk_a)
+
+    # Run 2: Resume from A, run second phase (dream) and stop (interrupt)
+    config2 = config.copy()
+    config2["training"] = config["training"].copy()
+    config2["training"]["resume_from"] = chk_a
+    trainer2 = Trainer(
+        config=config2,
+        model=model,
+        tokenizer=tokenizer,
+    )
+
+    def on_progress2(event):
+        if event["status"] == "phase_end" and event["phase"] == "dream" and event["cycle"] == 0:
+            trainer2._interrupted = True
+
+    trainer2.train(
+        train_dataloader=loader,
+        dream_dataloader=loader,
+        nightmare_dataloader=loader,
+        val_dataloader=loader,
+        on_progress=on_progress2
+    )
+    assert len(trainer2.history) == 2
+    assert trainer2.history[0]["phase"] == "wake"
+    assert trainer2.history[1]["phase"] == "dream"
+    chk_b = os.path.join(trainer2.checkpoint_dir, "cycle0_dream")
+    assert os.path.exists(chk_b)
+
+    # Run 3: Resume from B, run to completion (cycles = 3, so remaining 10 phases)
+    config3 = config.copy()
+    config3["training"] = config["training"].copy()
+    config3["training"]["resume_from"] = chk_b
+    trainer3 = Trainer(
+        config=config3,
+        model=model,
+        tokenizer=tokenizer,
+    )
+
+    history3 = trainer3.train(
+        train_dataloader=loader,
+        dream_dataloader=loader,
+        nightmare_dataloader=loader,
+        val_dataloader=loader
+    )
+
+    # Total phases in 3 cycles is 12 (3 * 4)
+    assert len(history3) == 12
+    assert history3[0]["phase"] == "wake"
+    assert history3[1]["phase"] == "dream"
+    assert history3[2]["phase"] == "nightmare"
+    assert history3[-1]["phase"] == "compress"
+
+
+def test_adaptive_scheduler_resume(minimal_config, shared_model_and_tokenizer):
+    """Test that AdaptiveScheduler is correctly offset during resume."""
+    model, tokenizer = shared_model_and_tokenizer
+    config = minimal_config.copy()
+    config["training"] = minimal_config["training"].copy()
+    config["training"]["early_stopping"] = True
+    config["training"]["num_cycles"] = 2
+
+    # Check scheduler type is AdaptiveScheduler
+    trainer1 = Trainer(config=config, model=model, tokenizer=tokenizer)
+    assert trainer1.scheduler.__class__.__name__ == "AdaptiveScheduler"
+
+    # Save checkpoint manually at cycle 0 dream
+    trainer1.history = [
+        {"phase": "wake", "avg_loss": 2.0, "cycle": 0},
+        {"phase": "dream", "avg_loss": 1.8, "cycle": 0}
+    ]
+    trainer1._save_checkpoint(cycle=0, phase="dream")
+    checkpoint_path = os.path.join(trainer1.checkpoint_dir, "cycle0_dream")
+
+    # Resume with adaptive scheduler
+    resume_config = config.copy()
+    resume_config["training"] = config["training"].copy()
+    resume_config["training"]["resume_from"] = checkpoint_path
+    trainer2 = Trainer(
+        config=resume_config,
+        model=model,
+        tokenizer=tokenizer,
+    )
+
+    # We mock loaders to trigger train load
+    base_ds = _make_tiny_dataset(4)
+    train_ds = _tokenize_dataset(base_ds, tokenizer)
+    loader = DataLoader(train_ds, batch_size=2)
+
+    # Let's interrupt immediately so it doesn't run the epochs
+    def on_progress2(event):
+        trainer2._interrupted = True
+
+    trainer2.train(
+        train_dataloader=loader,
+        dream_dataloader=loader,
+        nightmare_dataloader=loader,
+        val_dataloader=loader,
+        on_progress=on_progress2
+    )
+
+    # Check that offsets propagated to base_scheduler
+    assert trainer2.scheduler.base_scheduler.start_cycle == 0
+    assert trainer2.scheduler.base_scheduler.start_phase == "dream"
+
+    # Verify the remaining schedule (2 cycles * 4 phases = 8 total. Skipping first 2)
+    # Remaining: Cycle 0 nightmare, compress; Cycle 1 wake, dream, nightmare, compress
+    remaining_phases = list(trainer2.scheduler.base_scheduler)
+    assert len(remaining_phases) == 6
+    assert remaining_phases[0] == (0, "nightmare", 1)
