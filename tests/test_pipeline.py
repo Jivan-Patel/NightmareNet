@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from nightmarenet.pipeline import Pipeline, PipelineStatus
@@ -207,3 +209,65 @@ class TestPipelineRunner:
         rid = register_runner(runner)
         assert get_runner(rid) is runner
         assert get_runner("nonexistent") is None
+
+class TestAdaptiveTermination:
+    """Tests adaptive cycle termination."""
+    def test_auto_terminate_disabled(self, minimal_config):
+        """Adaptive termination should do nothing when disabled."""
+
+        pipe = Pipeline(minimal_config)
+
+        pipe._trainer = MagicMock()
+        pipe._dataset = MagicMock()
+
+        minimal_config["training"]["auto_terminate"] = False
+
+        event = {"cycle": 0}
+        with patch(
+            "nightmarenet.pipeline.quick_robustness_score"
+        ) as mock_score:
+
+            pipe._handle_cycle_end(event)
+
+            mock_score.assert_not_called()
+            pipe._trainer.request_stop.assert_not_called()
+
+    def test_convergence_patience_respected(self, minimal_config):
+        """Training should stop only after patience consecutive small deltas."""
+
+        minimal_config["training"]["auto_terminate"] = True
+        minimal_config["training"]["convergence_threshold"] = 0.01
+        minimal_config["training"]["convergence_patience"] = 2
+
+        pipe = Pipeline(minimal_config)
+        pipe._trainer = MagicMock()
+        pipe._trainer.model = MagicMock()
+        pipe._trainer.tokenizer = MagicMock()
+        pipe._trainer.device = "cpu"
+        pipe._dataset = MagicMock()
+
+        with patch(
+            "nightmarenet.pipeline.quick_robustness_score"
+        ) as mock_score:
+
+            mock_score.side_effect = [
+                0.80,
+                0.805,
+                0.809,
+            ]
+
+            pipe._handle_cycle_end({"cycle": 0})
+            pipe._trainer.request_stop.assert_not_called()
+
+            pipe._handle_cycle_end({"cycle": 1})
+            pipe._trainer.request_stop.assert_not_called()
+
+            pipe._handle_cycle_end({"cycle": 2})
+            pipe._trainer.request_stop.assert_called_once()
+
+    def test_hard_cap_configuration_preserved(self, minimal_config):
+        """num_cycles remains configured when adaptive termination is disabled."""
+
+        pipe = Pipeline(minimal_config)
+
+        assert pipe.config["training"]["num_cycles"] == 1

@@ -16,7 +16,9 @@ from typing import Any, Callable, Optional
 
 from nightmarenet.data.generator import create_generators_from_config
 from nightmarenet.data.ingest import DataIngestor
+from nightmarenet.distortions.text import apply_text_distortions
 from nightmarenet.evaluation.evaluator import Evaluator
+from nightmarenet.evaluation.metrics import quick_robustness_score
 from nightmarenet.training.trainer import Trainer, _tokenize_dataset
 from nightmarenet.utils.config import load_config
 from nightmarenet.utils.telemetry import record_metric, setup_telemetry, trace_phase
@@ -122,7 +124,11 @@ class Pipeline:
         self._val_dl = None
         self._trainer: Optional[Trainer] = None
         self._baseline_model = None
-
+        # Adaptive cycle termination state
+        self._last_robustness_score: Optional[float] = None
+        self._convergence_count = 0
+        self._final_convergence_delta: Optional[float] = None
+        self._cycles_completed = 0
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -154,6 +160,48 @@ class Pipeline:
                 "model": self.config.get("model", {}).get("name", "unknown"),
             },
         )
+
+    def _handle_cycle_end(self, event: dict) -> None:
+        """Handle adaptive convergence detection after each training cycle."""
+        if self._trainer is None:
+            return
+        training_cfg = self.config.get("training", {})
+        auto_terminate = training_cfg.get("auto_terminate", False)
+        threshold = training_cfg.get("convergence_threshold", 0.005)
+        patience = training_cfg.get("convergence_patience", 2)
+        if auto_terminate:
+            score = quick_robustness_score(
+                model=self._trainer.model,
+                base_dataset=self._dataset,
+                tokenizer=self._trainer.tokenizer,
+                distortion_fn=apply_text_distortions,
+                strength=0.5,
+                text_column=self.config.get("dataset", {}).get("text_column", "text"),
+                max_length=self.config.get("model", {}).get("max_length", 128),
+                batch_size=training_cfg.get("batch_size", 8),
+                device=str(self._trainer.device),
+            )
+            if self._last_robustness_score is None:
+                self._last_robustness_score = score
+                self._cycles_completed = event.get("cycle", 0) + 1
+            else:
+                delta = abs(score - self._last_robustness_score)
+                self._final_convergence_delta = delta
+                if delta < threshold:
+                    self._convergence_count += 1
+                else:
+                    self._convergence_count = 0
+                self._last_robustness_score = score
+                self._cycles_completed = event.get("cycle", 0) + 1
+                if ( self._convergence_count >= patience
+                    and self._trainer is not None
+                ):
+                    logger.info(
+                        "Robustness converged after %d cycles (delta=%.6f).",
+                        self._cycles_completed,
+                        delta,
+                    )
+                    self._trainer.request_stop()
 
     def cancel(self) -> None:
         """Request graceful cancellation of a running pipeline."""
@@ -499,6 +547,8 @@ class Pipeline:
             history = event.get("history")
             if history is not None:
                 self.metrics.history = history
+            if event.get("event") == "cycle_end":
+                self._handle_cycle_end(event)
             self._emit()
 
         train_attrs = {
@@ -584,6 +634,16 @@ class Pipeline:
 
                 # Generate comparison
                 comparison = evaluator.compare(baseline_results, trained_results)
+                comparison["convergence"] = {
+                    "cycles_completed": self._cycles_completed,
+                    "final_delta": self._final_convergence_delta,
+                    "auto_terminated": (
+                        self._convergence_count
+                        >= self.config.get("training", {}).get(
+                                "convergence_patience", 2
+                            )
+                    ),
+                }
                 self.metrics.comparison = comparison
 
                 # Generate markdown report

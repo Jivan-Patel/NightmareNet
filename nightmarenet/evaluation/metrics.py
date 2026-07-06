@@ -15,6 +15,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+from datasets import IterableDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -63,6 +64,84 @@ def compute_perplexity(model, dataloader: DataLoader, device="cpu") -> float:
         return float("inf")
     return result
 
+def quick_robustness_score(
+    model,
+    base_dataset,
+    tokenizer,
+    distortion_fn,
+    *,
+    strength: float = 0.5,
+    subset_size: int = 50,
+    text_column: str = "text",
+    max_length: int = 128,
+    batch_size: int = 8,
+    device="cpu",
+) -> float:
+    """Compute a lightweight robustness score on a fixed dataset subset.
+
+    Intended for inexpensive per-cycle convergence checks. Evaluates a
+    single distortion strength on a deterministic subset and returns a
+    scalar robustness score (higher is better).
+    """
+    if len(base_dataset) == 0:
+        return 0.0
+    try:
+        subset = (
+            base_dataset.shuffle(seed=42)
+            .select(range(min(subset_size, len(base_dataset))))
+        )
+        distorted = subset.map(
+            lambda example: {
+                **example,
+                text_column: distortion_fn(
+                    example[text_column],
+                    strength=strength,
+                ),
+            },
+            desc="Quick robustness probe",
+        )
+        def tokenize_fn(examples):
+            return tokenizer(
+                examples[text_column],
+                truncation=True,
+                padding="max_length",
+                max_length=max_length,
+                return_tensors="pt",
+            )
+        if isinstance(distorted, IterableDataset):
+            tokenized = distorted.map(
+                tokenize_fn,
+                batched=True,
+                remove_columns=(
+                    distorted.column_names
+                    if distorted.column_names
+                    else [text_column]
+                ),
+            )
+            tokenized = tokenized.with_format("torch")
+            dataloader = DataLoader(tokenized, batch_size=batch_size)
+        else:
+            tokenized = distorted.map(
+                tokenize_fn,
+                batched=True,
+                remove_columns=distorted.column_names,
+                desc="Tokenizing",
+            )
+            tokenized.set_format("torch")
+            dataloader = DataLoader(
+                tokenized,
+                batch_size=batch_size,
+                shuffle=True,
+            )
+        perplexity = compute_perplexity(
+            model=model,
+            dataloader=dataloader,
+            device=device,
+        )
+        return _safe_float(1.0 / max(perplexity, 1e-8))
+    except Exception as e:
+        logger.warning("Error during quick robustness computation: %s", e)
+        return 0.0
 
 def recall_score(
     model,
