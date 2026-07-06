@@ -218,12 +218,14 @@ class Trainer:
         if self.resume_manager:
             metadata = self.resume_manager.verify_and_load(self.model, self.optimizer, self.config)
             self._start_cycle = metadata.get("cycle", 0)
-            logger.info(f"Resuming from cycle {self._start_cycle}")
+            self._start_phase = metadata.get("phase", None)
+            logger.info(f"Resuming from cycle {self._start_cycle}, phase {self._start_phase}")
         else:
             self._start_cycle = 0
+            self._start_phase = None
 
         # Experiment tracker (only on main process)
-        if not dist.is_initialized() or dist.get_rank() == 0:
+        if not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0:
             self.tracker = create_tracker_from_config(config)
         else:
             self.tracker = create_tracker_from_config({})
@@ -248,7 +250,7 @@ class Trainer:
         """Save a model checkpoint after a phase."""
         if not self.training_config.get("save_every_phase", True):
             return
-        if dist.is_initialized() and dist.get_rank() != 0:
+        if dist.is_available() and dist.is_initialized() and dist.get_rank() != 0:
             return
 
         run_id_to_use = getattr(self, "run_id", "default_run")
@@ -256,6 +258,7 @@ class Trainer:
             run_id_to_use = "default_run"
 
         metrics = self.history[-1] if self.history else None
+        devices_used = self.device_pool.available_devices if hasattr(self, "device_pool") else []
 
         self.checkpointer.save(
             run_id=run_id_to_use,
@@ -264,7 +267,8 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             config=self.config,
-            metrics=metrics
+            metrics=metrics,
+            devices_used=devices_used
         )
 
     def _save_history(self):
@@ -313,6 +317,21 @@ class Trainer:
                 if cycle < getattr(self, "_start_cycle", 0):
                     logger.info(f"Skipping cycle {cycle} (resuming from {self._start_cycle})")
                     continue
+
+                if cycle == getattr(self, "_start_cycle", 0):
+                    start_phase = getattr(self, "_start_phase", None)
+                    if start_phase and not getattr(self, "_resume_caught_up", False):
+                        if phase != start_phase:
+                            logger.info(
+                                f"Skipping phase {phase} in cycle {cycle} (already completed)"
+                            )
+                            continue
+                        else:
+                            logger.info(
+                                f"Skipping phase {phase} in cycle {cycle} (already completed)"
+                            )
+                            self._resume_caught_up = True
+                            continue
 
                 if self._interrupted:
                     break
@@ -488,15 +507,15 @@ class Trainer:
         final_path = os.path.join(self.checkpoint_dir, "final")
         os.makedirs(final_path, exist_ok=True)
 
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             dist.barrier()
 
-        if not dist.is_initialized() or dist.get_rank() == 0:
+        if not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0:
             self.model.save_pretrained(final_path)
             self.tokenizer.save_pretrained(final_path)
             self._save_history()
 
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             self.ddp_wrapper.teardown()
 
         self.tracker.finish()

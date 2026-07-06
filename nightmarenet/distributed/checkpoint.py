@@ -36,7 +36,8 @@ class AtomicCheckpointer:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         config: dict,
-        metrics: Optional[dict] = None
+        metrics: Optional[dict] = None,
+        devices_used: Optional[list[int]] = None
     ) -> str:
         """Save state atomically and drop a .complete sentinel."""
         run_dir = os.path.join(self.base_dir, run_id)
@@ -77,7 +78,8 @@ class AtomicCheckpointer:
                     "cycle": cycle,
                     "phase": phase,
                     "config_hash": compute_config_hash(config),
-                    "metrics": metrics or {}
+                    "metrics": metrics or {},
+                    "devices_used": devices_used or []
                 }, f, indent=2)
 
             # Atomically rename

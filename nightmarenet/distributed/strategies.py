@@ -12,6 +12,13 @@ from nightmarenet.distributed.device_pool import DevicePool
 logger = logging.getLogger(__name__)
 
 
+def unwrap_model(model: nn.Module) -> nn.Module:
+    """Recursively unwrap a model from DDP or DataParallel."""
+    if hasattr(model, "module"):
+        return unwrap_model(model.module)
+    return model
+
+
 def apply_phase_strategy(
     phase: str,
     model: nn.Module,
@@ -24,6 +31,7 @@ def apply_phase_strategy(
     Dream: DataParallel (embarrassingly parallel inference)
     Compress: Single GPU
     """
+    model = unwrap_model(model)
     num_devices = device_pool.get_num_devices()
 
     if num_devices <= 1:
