@@ -25,7 +25,8 @@ Thank you for helping improve NightmareNet. This project uses a **research-first
 7. [Coding standards](#4-coding-standards)
 8. [Documentation](#5-documentation)
 9. [PR checklist](#6-pr-checklist)
-10. [Where to ask for help](#7-where-to-ask-for-help)
+10. [ECSoC'26 Contributors](#8-ecsoc26-contributors)
+11. [Where to ask for help](#9-where-to-ask-for-help)
 
 ---
 
@@ -397,7 +398,61 @@ CI mirrors the local checks plus a security scan. Merging is blocked on a green 
 
 ---
 
-## 7. Where to ask for help
+## 8. ECSoC'26 Contributors
+
+This section applies to contributors participating in the **European Computer Science Online Conference 2026 (ECSoC'26)** open-source track.
+
+### Points System
+
+Issues are tagged with difficulty labels that determine base XP:
+
+| Label | Base XP | Scope |
+|-------|---------|-------|
+| `ECSoC26-L1` | 10 XP | Documentation, config fixes, trivial code changes (< 1 hour) |
+| `ECSoC26-L2` | 25 XP | Single-feature additions, test suites, CI workflows (few hours) |
+| `ECSoC26-L3` | 50 XP | Architectural features, new modules, multi-day implementations |
+
+### Bonus XP Labels
+
+These are applied by maintainers at merge time based on quality. **Do not request them.** Focus on correct PR submission and code quality - bonuses follow naturally.
+
+| Label | Bonus | Criteria |
+|-------|-------|----------|
+| `good-pr` | +15 XP | Clean PR description, all checklist items checked, CI green, no revision rounds |
+| `good-issue` | +10 XP | Well-researched issue with file paths, code references, and clear acceptance criteria |
+| `good-ui` | +25 XP | Frontend changes with before/after screenshots, responsive design, accessibility |
+| `good-backend` | +50 XP | Backend changes demonstrating architectural understanding, proper error handling, tests |
+
+### Rules for ECSoC'26 Participants
+
+1. **Maximum 5 concurrent assignments.** You can be assigned to at most 5 open issues at any time. Finish and deliver before requesting more.
+
+2. **No spam or AI slop.** PRs that are clearly unreviewed AI output (hallucinated APIs, untested code, copy-pasted without understanding) will be closed immediately and may result in disqualification from the program.
+
+3. **Quality over speed.** A PR that needs 3 revision rounds costs more maintainer time than one that merges on first review. Read the codebase, run tests locally, follow conventions.
+
+4. **Approach comment required.** Before requesting assignment, post a comment explaining your planned approach (which files, what changes, estimated timeline). "Assign me" without context will be ignored.
+
+5. **7-day activity window.** If assigned with no PR and no progress update comment within 7 days, you will be unassigned without warning.
+
+6. **One PR per issue.** Don't bundle unrelated fixes. If you find something else while working, open a separate issue for it.
+
+7. **Run CI locally before pushing.** `ruff check .` + `pytest tests/` + `mypy nightmarenet/`. PRs that fail CI on first push suggest you didn't test locally.
+
+8. **Disclose AI usage.** If you used AI tools (Copilot, ChatGPT, Claude, Cursor), state it in the PR description. We welcome AI-assisted contributions. We reject blindly pasted output.
+
+### How to Maximize Your Score
+
+- Pick issues matching your skill level (start with L1 if new to the codebase)
+- Read the source code around your change before implementing
+- Include tests for new functionality (automatic `good-pr` signal)
+- Write PR descriptions that explain WHY, not just WHAT
+- Respond to review comments within 24 hours
+- Follow up merged PRs with related improvements (builds trust, gets `good-backend`)
+
+---
+
+## 9. Where to ask for help
 
 - **GitHub Discussions** — `https://github.com/Adit-Jain-srm/NightmareNet/discussions`
   - `q-and-a` for "how do I..." questions
