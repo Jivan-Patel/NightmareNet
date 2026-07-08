@@ -73,7 +73,7 @@ class DistortionRegistry:
                 all_eps = importlib.metadata.entry_points()
                 eps = all_eps.get("nightmarenet.distortions", [])  # type: ignore[attr-defined, assignment]
             except Exception:
-                eps = []
+                eps = []  # type: ignore[assignment]
 
         for ep in eps:
             try:
