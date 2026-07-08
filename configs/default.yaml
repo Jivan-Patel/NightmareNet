@@ -39,6 +39,7 @@ training:
   save_every_phase: true
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
+  resume_from: null            # Path to checkpoint directory to resume from
 
 # Distortion configuration
 distortion:

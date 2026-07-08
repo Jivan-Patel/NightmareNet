@@ -30,6 +30,11 @@ def cmd_train(args: argparse.Namespace) -> int:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
+    if getattr(args, "resume", None):
+        if "training" not in config:
+            config["training"] = {}
+        config["training"]["resume_from"] = args.resume
+
     def on_event(event: dict) -> None:
         phase = event.get("status", "unknown")
         print(f"  [{phase}] {event.get('message', '')}")
