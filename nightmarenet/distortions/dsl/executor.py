@@ -2,7 +2,6 @@
 
 import ast
 import logging
-import random
 from typing import Optional
 
 from nightmarenet.distortions.dsl.schema import ChainConfig

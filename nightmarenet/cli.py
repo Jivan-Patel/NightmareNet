@@ -582,17 +582,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-presets", action="store_true", help="List available preset chains"
     )
     distort_parser.add_argument("--validate", help="Validate a preset YAML file")
-        help="Legacy distortion type (use --engine instead)",
-    )
     distort_parser.add_argument(
         "--engine", help="Distortion engine name (use --list-engines to see available)"
     )
     distort_parser.add_argument(
         "--list-engines", action="store_true", help="List all available distortion engines"
     )
-    distort_parser.add_argument("--strength", type=float, default=0.3)
-    distort_parser.add_argument("--text", required=True)
-    distort_parser.add_argument("--seed", type=int, default=None)
 
     # foundation
     foundation_parser = subparsers.add_parser("foundation", help="Manage foundation models")
