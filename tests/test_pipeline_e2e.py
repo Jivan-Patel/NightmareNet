@@ -49,7 +49,7 @@ def test_4_phase_training_cycle_e2e():
                 "distill_temperature": 2.0,
             },
             "evaluation": {
-                "robustness_strengths": [0.3],
+                "robustness_strengths": [0.1, 0.3],
                 "eval_split_ratio": 0.2,
             },
             "tracking": {
