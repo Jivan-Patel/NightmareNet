@@ -96,3 +96,5 @@ Plan.md
 lint_output.txt
 skills-lock.json
 .vercel
+
+.nightmarenet_cache/
