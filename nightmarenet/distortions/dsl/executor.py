@@ -181,10 +181,7 @@ class ChainExecutor:
         Returns:
             Final distorted text after applying all applicable steps
         """
-        # Set seed for reproducibility
         effective_seed = seed if seed is not None else chain_config.defaults.seed
-        if effective_seed is not None:
-            random.seed(effective_seed)
 
         current_text = text
         steps_applied = 0
@@ -262,8 +259,6 @@ class ChainExecutor:
             - steps: List of step results with input/output and status
         """
         effective_seed = seed if seed is not None else chain_config.defaults.seed
-        if effective_seed is not None:
-            random.seed(effective_seed)
 
         current_text = text
         steps_trace = []
