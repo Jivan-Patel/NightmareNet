@@ -263,6 +263,13 @@ All distortions are seeded (`seed = 42`) for deterministic reproduction.
 
 ### 4.4 Reproducibility
 
+All distortion operations are deterministic given `(text, strength, seed)`. This
+property is systematically verified by property-based tests in
+`tests/test_distortion_fuzz.py` using [Hypothesis](https://hypothesis.readthedocs.io/),
+which generates 1000+ random `(text, strength, seed)` triples per engine — including
+Unicode text, empty inputs, and strength boundaries — and asserts identical outputs
+across two independent calls with the same inputs.
+
 ```bash
 py -3.12 -m venv .venv312
 .venv312/Scripts/Activate.ps1

@@ -407,7 +407,8 @@ If you use NightmareNet in academic work, please cite:
 ## Testing
 
 ```bash
-pytest --cov=nightmarenet --cov-report=term-missing tests/ -v --tb=short   # 556+ tests
+pytest --cov=nightmarenet --cov-report=term-missing tests/ -v --tb=short   # 558+ tests
+pytest -m slow tests/test_distortion_fuzz.py -v                            # 1000+ sample fuzz suite
 ruff check .                         # zero lint errors
 mypy nightmarenet/                   # type check
 cd frontend && npm run build         # production build
