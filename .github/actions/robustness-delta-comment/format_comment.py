@@ -1,6 +1,7 @@
 import json
 import os
 
+
 def format_percentage(val):
     return f"{val * 100:.1f}%"
 
@@ -15,7 +16,7 @@ def format_delta(val, is_percentage=False):
 
 def main():
     try:
-        with open("delta_results.json", "r") as f:
+        with open("delta_results.json") as f:
             data = json.load(f)
     except Exception:
         # Fallback if compute_delta didn't run or file is missing
@@ -52,14 +53,14 @@ def main():
         metric = item["metric"]
         # Format as percentage if name contains accuracy or textfooler, else decimal
         # We assume overall robustness is decimal, others can be percentage based on name,
-        # but let's check values (if <= 1, maybe % is good). Let's use % for clean_accuracy, 
+        # but let's check values (if <= 1, maybe % is good). Let's use % for clean_accuracy,
         # and decimal for robustness_score as per issue example.
         is_percent = "accuracy" in metric.lower() or any(x in metric.lower() for x in ["fooler", "attack", "bugg"])
-        
+
         main_str = format_percentage(item["main"]) if is_percent else format_decimal(item["main"])
         pr_str = format_percentage(item["pr"]) if is_percent else format_decimal(item["pr"])
         delta_str = format_delta(item["delta"], is_percent)
-        
+
         # Display name tweaks
         display_metric = metric.replace("_", " ").title()
         if "Textfooler" in display_metric:

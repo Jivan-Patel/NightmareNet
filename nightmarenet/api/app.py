@@ -8,6 +8,7 @@ Usage:
     uvicorn nightmarenet.api.app:app --host 0.0.0.0 --port 8000
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -148,7 +149,9 @@ _test_count_cache: dict[str, Any] = {"count": None, "checked_at": 0.0}
 _TEST_CACHE_TTL = 300  # refresh every 5 minutes
 
 
-WEBHOOKS_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "webhooks.json")
+WEBHOOKS_FILE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "webhooks.json"
+)
 
 def _get_test_count() -> Optional[int]:
     """Return the number of collected tests, cached (optionally, dev-only)."""
@@ -850,7 +853,7 @@ async def create_pipeline(
     )
 
     # Build config from request
-    config = {
+    config: dict[str, Any] = {
         "model": {
             "name": body.model_name,
             "type": body.model_type,
@@ -894,16 +897,17 @@ async def create_pipeline(
     }
 
     if body.webhooks:
-        config["notifications"]["webhooks"].extend([{"url": wh.url, "events": wh.events} for wh in body.webhooks])
+        config["notifications"]["webhooks"].extend(
+            [{"url": wh.url, "events": wh.events} for wh in body.webhooks]
+        )
 
     if os.path.exists(WEBHOOKS_FILE_PATH):
         try:
-            with open(WEBHOOKS_FILE_PATH, "r", encoding="utf-8") as f:
+            with open(WEBHOOKS_FILE_PATH, encoding="utf-8") as f:
                 data = json.load(f)
                 config["notifications"]["webhooks"].extend(data.get("webhooks", []))
         except Exception as e:
-            import logging
-            logging.error(f"Failed to read webhooks in create_pipeline: {e}")
+            logger.error(f"Failed to read webhooks in create_pipeline: {e}")
 
 
     pipeline = Pipeline(config=config)
@@ -1009,12 +1013,11 @@ async def get_webhook_settings():
     if not os.path.exists(WEBHOOKS_FILE_PATH):
         return WebhookSettingsResponse(webhooks=[])
     try:
-        with open(WEBHOOKS_FILE_PATH, "r", encoding="utf-8") as f:
+        with open(WEBHOOKS_FILE_PATH, encoding="utf-8") as f:
             data = json.load(f)
             return WebhookSettingsResponse(webhooks=data.get("webhooks", []))
     except Exception as e:
-        import logging
-        logging.error(f"Failed to read webhooks: {e}")
+        logger.error(f"Failed to read webhooks: {e}")
         return WebhookSettingsResponse(webhooks=[])
 
 
@@ -1035,11 +1038,10 @@ async def save_webhook_settings(
             json.dump({"webhooks": [w.dict() for w in body.webhooks]}, f, indent=2)
         return WebhookSettingsResponse(webhooks=body.webhooks)
     except Exception as e:
-        import logging
-        logging.error(f"Failed to save webhooks: {e}")
+        logger.error(f"Failed to save webhooks: {e}")
         raise HTTPException(
             status_code=500, detail="Failed to save webhook settings."
-        )
+        ) from None
 
 
 _TEST_WEBHOOK_BODY = Body(...)
