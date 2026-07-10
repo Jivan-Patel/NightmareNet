@@ -539,26 +539,45 @@ robustness distillation: Robust soft labels make student better (RSLAD).
 
 ---
 
-## Appendix A — Hyperparameters
+## Appendix A — Full Hyperparameter Tables for All Experiments
 
-Reproduced exactly as committed in `scripts/run_gpu_benchmark.py` (commit
-`80f0e8f`):
+All values below are extracted directly from the YAML configs in `configs/`
+and are the source of truth for reproduction.
 
-| Hyperparameter | Value |
-|----------------|-------|
-| Optimizer | AdamW |
-| Wake learning rate | 3e-5 |
-| Nightmare learning rate | 1.5e-5 (= wake_lr × 0.5) |
-| Batch size | 8 |
-| Max sequence length | 128 |
-| AMP dtype | float16 (`torch.amp.GradScaler("cuda")`) |
-| Gradient clipping | none |
-| Weight decay | 0 (AdamW default) |
-| Warmup steps | 0 |
-| LR schedule | constant |
-| Random seed | 42 (`random`, `numpy`, `torch`, `torch.cuda`) |
-| Tokenizer truncation | left, `max_length=128` |
-| Distortion seed | 42 (fixed for all eval distortions) |
+### A.1 Training configurations
+
+| Experiment | Model | Batch Size | Learning Rate | Warmup Steps | Dream Strength | Nightmare Strength | Pruning Ratio | num\_cycles | Max Length | Seed |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `default.yaml` (base config) | `gpt2` | 8 | 5.0e-5 | 100 | 0.25 | 0.80 | 0.20 | 3 | 128 | 42 |
+| `benchmark_sst2.yaml` (v1 benchmark) | `distilbert-base-uncased` | 8 | 3.0e-5 | — $^{a}$ | 0.25 | 0.75 | 0.15 | 1 | 128 | 42 |
+
+$^{a}$ `warmup_steps` is not overridden in `benchmark_sst2.yaml`; inherits `default.yaml`'s value of 100 unless the run explicitly disables it.
+
+**Additional `default.yaml` fields not in the table above:** `nightmare_lr_multiplier: 2.0`, `weight_decay: 0.01`, `gradient_accumulation_steps: 4`, `wake_epochs: 3` / `dream_epochs: 2` / `nightmare_epochs: 1`.
+
+**Additional `benchmark_sst2.yaml` fields not in the table above:** `wake_epochs: 2` / `dream_epochs: 1` / `nightmare_epochs: 1` / `compress_epochs: 1`, `distill_temperature: 2.0`, `device: cpu`.
+
+### A.2 Ensemble evaluation configuration (`ensemble_benchmark.yaml`)
+
+This config is **evaluation-only** — it does not train a model, so it has no
+batch size, learning rate, warmup, pruning ratio, or `num_cycles` fields. It
+evaluates 3 pretrained/checkpointed models against a distortion sweep on
+SST-2 (validation split, 100 samples):
+
+| Field | Value |
+|---|---|
+| Models evaluated | `distilbert-base-uncased`, `roberta-base`, `bert-base-uncased` |
+| Dataset | SST-2 (`sentence` / `label` columns), validation split, 100 samples |
+| Dream distortion strengths | 0.1, 0.3, 0.5, 0.7, 0.9 |
+| Nightmare distortion strengths | 0.1, 0.3, 0.5, 0.7, 0.9 |
+| Output formats | json, csv, latex |
+| Output directory | `./results/ensemble-v1` |
+
+### A.3 Hardware
+
+All experiments reported in this paper were run on a single consumer laptop
+GPU: **NVIDIA RTX 3050 Ti Laptop GPU, 4 GB VRAM** (see §4.1, §6.2 for
+context on the compute constraints this implies).
 
 ## Appendix B — Distortion taxonomy
 
