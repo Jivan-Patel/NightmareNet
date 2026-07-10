@@ -446,13 +446,18 @@ class Evaluator:
             # Add statistical significance information
             sig = r.get("significance", {})
             if sig and sig.get("method") == "bootstrap_ci":
-                sig_verdict = "**statistically significant**" if sig.get("significant") else "not significant"
+                sig_verdict = (
+                    "**statistically significant**"
+                    if sig.get("significant")
+                    else "not significant"
+                )
                 lines.extend(
                     [
                         "",
                         "**Statistical Significance (Bootstrap CI)**",
                         f"- Delta mean: {_fmt(sig.get('delta_mean', 0.0), signed=True)}",
-                        f"- 95% CI: [{_fmt(sig.get('ci_lower', 0.0))}, {_fmt(sig.get('ci_upper', 0.0))}]",
+                        f"- 95% CI: [{_fmt(sig.get('ci_lower', 0.0))}, "
+                        f"{_fmt(sig.get('ci_upper', 0.0))}]",
                         f"- p-value: {sig.get('p_value', 1.0):.4f}",
                         f"- Verdict: {sig_verdict} (α={sig.get('alpha', 0.05)})",
                     ]
