@@ -1,1 +1,0 @@
-{"summary": {"model": "dummy", "robustness": 0.99, "latency": 1.5, "params": 1000}, "results": {"dream": {"strengths": [0.1, 0.5], "accuracies": [5.0, 10.0]}}}
