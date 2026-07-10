@@ -28,16 +28,15 @@ def test_4_phase_training_cycle_e2e():
                 "name": "distilbert-base-uncased",
                 "type": "masked_lm",
                 "max_length": 128,
+                "device": "cpu",
             },
             "training": {
                 "wake_epochs": 1,
                 "dream_epochs": 1,
                 "nightmare_epochs": 1,
-                "compress_epochs": 1,
                 "num_cycles": 1,
                 "batch_size": 8,
                 "learning_rate": 3.0e-5,
-                "device": "cpu",
                 "output_dir": temp_dir,
             },
             "distortion": {
@@ -46,14 +45,13 @@ def test_4_phase_training_cycle_e2e():
             },
             "compression": {
                 "pruning_ratio": 0.1,
-                "distill_temperature": 2.0,
             },
             "evaluation": {
                 "robustness_strengths": [0.1, 0.3],
                 "eval_split_ratio": 0.2,
             },
             "tracking": {
-                "enabled": False,
+                "backend": "none",
             }
         }
 
