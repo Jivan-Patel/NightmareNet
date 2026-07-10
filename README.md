@@ -96,6 +96,46 @@ Run the full Wake -> Dream -> Nightmare -> Compress cycle on SST-2 in under 10 m
 > Dev hardware target is a 4 GB VRAM laptop GPU (RTX 3050 Ti). DistilBERT and DistilGPT-2 fit comfortably; GPT-2 (124M) requires gradient checkpointing + FP16.
 
 ---
+## Running the API + Dashboard Locally (Docker)
+
+The open-source version of NightmareNet currently supports running the **API** and **Frontend** locally. The `db`, `redis`, and `worker` services are included for future hosted functionality and are disabled by default.
+
+### Default (functional) setup
+
+Start the currently supported services:
+
+```bash
+docker compose up
+```
+
+or explicitly:
+
+```bash
+docker compose up api frontend
+```
+
+This starts only:
+
+- ✅ `api`
+- ✅ `frontend`
+
+### Hosted profile (planned infrastructure)
+
+To include the optional infrastructure services, enable the `hosted` profile:
+
+```bash
+docker compose --profile hosted up
+```
+
+This starts:
+
+- `api`
+- `frontend`
+- `db`
+- `redis`
+- `worker`
+
+> **Note:** The `db`, `redis`, and `worker` services are intended for the future hosted platform and are not required by the current open-source API. Running `docker compose up` without a profile starts only the functional services.
 
 ## What's Inside — 20 Panels of Capability
 
