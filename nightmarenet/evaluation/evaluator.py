@@ -12,6 +12,8 @@ import os
 from datetime import datetime
 from typing import Any, Optional
 
+import numpy as np
+from scipy import stats
 from torch.utils.data import DataLoader
 
 from nightmarenet.evaluation.glue import evaluate_glue
@@ -24,6 +26,73 @@ from nightmarenet.evaluation.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _bootstrap_ci(
+    baseline: list[float],
+    trained: list[float],
+    n_bootstrap: int = 10000,
+    alpha: float = 0.05,
+) -> dict:
+    """Compute bootstrap confidence interval for paired differences.
+
+    Args:
+        baseline: List of baseline metric values (e.g., per-strength scores).
+        trained: List of trained metric values (same length as baseline).
+        n_bootstrap: Number of bootstrap samples.
+        alpha: Significance level for CI (default 0.05 for 95% CI).
+
+    Returns:
+        Dict with delta_mean, ci_lower, ci_upper, p_value, and significant flag.
+    """
+    if len(baseline) != len(trained) or len(baseline) < 2:
+        return {
+            "delta_mean": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 0.0,
+            "p_value": 1.0,
+            "significant": False,
+            "method": "insufficient_data",
+        }
+
+    baseline_arr = np.array(baseline)
+    trained_arr = np.array(trained)
+    deltas = trained_arr - baseline_arr
+    delta_mean = float(np.mean(deltas))
+
+    # Bootstrap resampling
+    n = len(deltas)
+    bootstrap_deltas = []
+    for _ in range(n_bootstrap):
+        indices = np.random.choice(n, size=n, replace=True)
+        bootstrap_deltas.append(np.mean(deltas[indices]))
+
+    bootstrap_deltas = np.array(bootstrap_deltas)
+    ci_lower = float(np.percentile(bootstrap_deltas, 100 * alpha / 2))
+    ci_upper = float(np.percentile(bootstrap_deltas, 100 * (1 - alpha / 2)))
+
+    # Paired t-test p-value
+    try:
+        _, p_value = stats.ttest_rel(trained_arr, baseline_arr)
+        p_value = float(p_value)
+        # Handle NaN from identical data (zero variance)
+        if np.isnan(p_value) or np.isinf(p_value):
+            p_value = 1.0
+    except Exception:
+        p_value = 1.0
+
+    # Significant if CI doesn't include 0 and p < alpha
+    significant = (ci_lower > 0 or ci_upper < 0) and p_value < alpha
+
+    return {
+        "delta_mean": delta_mean,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "p_value": p_value,
+        "significant": significant,
+        "method": "bootstrap_ci",
+        "alpha": alpha,
+    }
 
 
 class Evaluator:
@@ -47,6 +116,7 @@ class Evaluator:
             "metrics", ["recall", "generalization", "robustness", "hallucination"]
         )
         self.output_dir = self.eval_config.get("output_dir", "results")
+        self.significance_alpha = self.eval_config.get("significance_alpha", 0.05)
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _log_eval(self, prefix: str, metrics: dict) -> None:
@@ -202,7 +272,8 @@ class Evaluator:
             trained_results: Evaluation results from the DreamPhase-trained model.
 
         Returns:
-            Dict with side-by-side comparison for each metric.
+            Dict with side-by-side comparison for each metric, including
+            statistical significance testing where applicable.
         """
         comparison = {
             "baseline_label": baseline_results.get("label", "baseline"),
@@ -230,6 +301,21 @@ class Evaluator:
                 ):
                     deltas[key] = trained[key] - baseline[key]
             metric_comparison["deltas"] = deltas
+
+            # Add statistical significance testing for robustness (per-strength scores)
+            if metric_name == "robustness":
+                baseline_perplexities = baseline.get("perplexities", [])
+                trained_perplexities = trained.get("perplexities", [])
+                if baseline_perplexities and trained_perplexities:
+                    # Use inverse perplexity as the metric (higher is better)
+                    baseline_scores = [1.0 / max(p, 1e-8) for p in baseline_perplexities]
+                    trained_scores = [1.0 / max(p, 1e-8) for p in trained_perplexities]
+                    significance = _bootstrap_ci(
+                        baseline_scores,
+                        trained_scores,
+                        alpha=self.significance_alpha,
+                    )
+                    metric_comparison["significance"] = significance
 
             comparison["metrics"][metric_name] = metric_comparison
 
@@ -356,6 +442,21 @@ class Evaluator:
                 f"| {_fmt(tr_auc)} "
                 f"| {_fmt(delta_auc, signed=True)} |"
             )
+
+            # Add statistical significance information
+            sig = r.get("significance", {})
+            if sig and sig.get("method") == "bootstrap_ci":
+                sig_verdict = "**statistically significant**" if sig.get("significant") else "not significant"
+                lines.extend(
+                    [
+                        "",
+                        "**Statistical Significance (Bootstrap CI)**",
+                        f"- Delta mean: {_fmt(sig.get('delta_mean', 0.0), signed=True)}",
+                        f"- 95% CI: [{_fmt(sig.get('ci_lower', 0.0))}, {_fmt(sig.get('ci_upper', 0.0))}]",
+                        f"- p-value: {sig.get('p_value', 1.0):.4f}",
+                        f"- Verdict: {sig_verdict} (α={sig.get('alpha', 0.05)})",
+                    ]
+                )
             lines.append("")
 
         if "hallucination" in metrics and _metric_ok(metrics["hallucination"]):
