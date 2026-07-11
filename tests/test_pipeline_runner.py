@@ -1,18 +1,16 @@
 """Tests for pipeline runner registry behavior."""
 
 import json
-import tempfile
-from pathlib import Path
+import time
 from unittest.mock import MagicMock
-from unittest.mock import patch
 
 import pytest
 
 from nightmarenet.pipeline_runner import (
     PipelineRunner,
+    _get_runs_dir,
     _persist_run_state,
     _update_run_state,
-    _get_runs_dir,
     load_persisted_runs,
     register_runner,
 )
@@ -57,7 +55,6 @@ def test_register_raises_when_registry_at_cap_and_all_running(monkeypatch) -> No
 def test_persistence_round_trip_with_metrics(monkeypatch, tmp_path) -> None:
     """Test that run state persists and loads correctly with metrics."""
     import nightmarenet.pipeline_runner as pr
-    import time
 
     monkeypatch.setenv("NIGHTMARENET_RUNS_DIR", str(tmp_path))
     pr._runners.clear()
@@ -90,7 +87,6 @@ def test_persistence_round_trip_with_metrics(monkeypatch, tmp_path) -> None:
 def test_stale_detection_all_active_statuses(monkeypatch, tmp_path) -> None:
     """Test that stale detection works for all active statuses."""
     import nightmarenet.pipeline_runner as pr
-    import time
 
     monkeypatch.setenv("NIGHTMARENET_RUNS_DIR", str(tmp_path))
     pr._runners.clear()

@@ -200,7 +200,7 @@ def list_all_runs(include_historical: bool = True) -> list[dict]:
 
 def _atomic_write_json(file_path: Path, data: dict) -> None:
     """Atomically write JSON data to a file.
-    
+
     Uses a temporary file and os.replace to ensure atomic writes,
     preventing corruption if the process crashes mid-write.
     """
@@ -228,7 +228,7 @@ _DEFAULT_RUNS_DIR = "runs"
 
 def _get_runs_dir() -> Path:
     """Get the directory for storing run state files.
-    
+
     Uses NIGHTMARENET_RUNS_DIR environment variable if set, otherwise
     defaults to './runs' relative to the current working directory.
     In production, set NIGHTMARENET_RUNS_DIR to a persistent location
@@ -257,7 +257,12 @@ def _persist_run_state(run_id: str, config: dict, status: str, timestamp: float)
     logger.debug("Persisted run state for %s to %s", run_id, run_file)
 
 
-def _update_run_state(run_id: str, status: str, timestamp: float, metrics: Optional[dict] = None) -> None:
+def _update_run_state(
+    run_id: str,
+    status: str,
+    timestamp: float,
+    metrics: Optional[dict] = None,
+) -> None:
     """Update run state on disk."""
     runs_dir = _get_runs_dir()
     run_file = runs_dir / f"{run_id}.json"
