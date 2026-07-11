@@ -1,6 +1,5 @@
 """Tests for evaluation metrics and comparison."""
 
-import numpy as np
 import pytest
 
 from nightmarenet.evaluation.evaluator import _bootstrap_ci
