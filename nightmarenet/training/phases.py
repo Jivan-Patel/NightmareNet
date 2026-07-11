@@ -43,6 +43,7 @@ class WakePhase:
         device: Union[str, torch.device] = "cpu",
         scaler: Optional[torch.amp.GradScaler] = None,
         callback_manager: Optional[CallbackManager] = None,
+        lr_scheduler=None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -50,6 +51,7 @@ class WakePhase:
         self.device = device
         self.scaler = scaler
         self.callback_manager = callback_manager
+        self.lr_scheduler = lr_scheduler
         self.max_grad_norm: float = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps: int = config.get("gradient_accumulation_steps", 1)
 
@@ -115,6 +117,8 @@ class WakePhase:
                         self.scaler.update()
                     else:
                         self.optimizer.step()
+                    if self.lr_scheduler is not None:
+                        self.lr_scheduler.step()
                     self.optimizer.zero_grad()
 
                 epoch_loss += loss.item() * self.gradient_accumulation_steps
@@ -141,7 +145,6 @@ class WakePhase:
                         metrics={"avg_loss": avg_epoch_loss},
                     )
                 )
-
 
         return {
             "phase": "wake",
@@ -175,6 +178,7 @@ class DreamPhase:
         kl_weight: float = 0.1,
         scaler: Optional[torch.amp.GradScaler] = None,
         callback_manager: Optional[CallbackManager] = None,
+        lr_scheduler=None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -183,6 +187,7 @@ class DreamPhase:
         self.reference_model = reference_model
         self.kl_weight = kl_weight
         self.scaler = scaler
+        self.lr_scheduler = lr_scheduler
         self.max_grad_norm = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
         self.callback_manager = callback_manager
@@ -283,6 +288,8 @@ class DreamPhase:
                         self.scaler.update()
                     else:
                         self.optimizer.step()
+                    if self.lr_scheduler is not None:
+                        self.lr_scheduler.step()
                     self.optimizer.zero_grad()
 
                 epoch_loss += loss.item() * self.gradient_accumulation_steps
@@ -348,6 +355,7 @@ class NightmarePhase:
         device: Union[str, torch.device] = "cpu",
         lr_multiplier: float = 2.0,
         scaler: Optional[torch.amp.GradScaler] = None,
+        lr_scheduler=None,
         callback_manager: Optional[CallbackManager] = None,
     ) -> None:
         self.model = model
@@ -355,6 +363,7 @@ class NightmarePhase:
         self.config = config
         self.device = device
         self.callback_manager = callback_manager
+        self.lr_scheduler = lr_scheduler
         if lr_multiplier <= 0:
             raise ValueError(f"lr_multiplier must be > 0, got {lr_multiplier}")
         self.lr_multiplier = lr_multiplier
@@ -453,6 +462,8 @@ class NightmarePhase:
                             self.scaler.update()
                         else:
                             self.optimizer.step()
+                        if self.lr_scheduler is not None:
+                            self.lr_scheduler.step()
                         self.optimizer.zero_grad()
 
                     epoch_loss += loss.item() * self.gradient_accumulation_steps

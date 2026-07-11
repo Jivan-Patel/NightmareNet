@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional
 import torch
 import torch.distributed as dist
 from datasets import IterableDataset
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForCausalLM,
@@ -417,6 +418,19 @@ class Trainer:
 
         # Native distributed logic is applied per-phase via apply_phase_strategy
 
+        warmup_steps = self.training_config.get("warmup_steps", 0)
+
+        lr_scheduler = None
+
+        if warmup_steps > 0:
+
+            def warmup_lambda(current_step):
+                return current_step / warmup_steps
+
+            lr_scheduler = LambdaLR(
+                self.optimizer,
+                lr_lambda=warmup_lambda,
+            )
         prev_handler = None
         if threading.current_thread() is threading.main_thread():
             prev_handler = signal.getsignal(signal.SIGINT)
@@ -599,6 +613,7 @@ class Trainer:
                         device=self.device,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
+                        lr_scheduler=lr_scheduler,
                     )
                     result = wake_runner.run(train_dataloader, num_epochs=num_epochs)
 
@@ -618,6 +633,7 @@ class Trainer:
                         kl_weight=0.1,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
+                        lr_scheduler=lr_scheduler,
                     )
                     result = dream_runner.run(dream_dataloader, num_epochs=num_epochs)
 
@@ -631,6 +647,7 @@ class Trainer:
                         lr_multiplier=lr_multiplier,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
+                        lr_scheduler=lr_scheduler,
                     )
                     result = nightmare_runner.run(nightmare_dataloader, num_epochs=num_epochs)
 
