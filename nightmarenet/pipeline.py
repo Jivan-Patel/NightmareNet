@@ -19,6 +19,7 @@ from nightmarenet.data.ingest import DataIngestor
 from nightmarenet.distortions.text import apply_text_distortions
 from nightmarenet.evaluation.evaluator import Evaluator
 from nightmarenet.evaluation.metrics import evaluate_cycle, quick_robustness_score
+from nightmarenet.training.callbacks import CallbackManager, TrainingEvent
 from nightmarenet.training.trainer import Trainer, _tokenize_dataset
 from nightmarenet.utils.config import load_config
 from nightmarenet.utils.telemetry import record_metric, setup_telemetry, trace_phase
@@ -142,6 +143,13 @@ class Pipeline:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _on_training_event(self, event: TrainingEvent) -> None:
+        logger.debug(
+            "Training event: %s (%s)",
+            event.event_type.value,
+            event.phase,
+        )
 
     def _emit(self) -> None:
         if self.on_event is not None:
@@ -463,11 +471,14 @@ class Pipeline:
                     logger.info("Phase '%s' optimization complete: %s", phase_name, quality)
                 else:
                     logger.warning(
-                        "Phase '%s' optimization returned None; using original.", phase_name
+                        "Phase '%s' optimization returned None; using original.",
+                        phase_name,
                     )
             except Exception:
                 logger.warning(
-                    "Phase '%s' optimization failed; using original.", phase_name, exc_info=True
+                    "Phase '%s' optimization failed; using original.",
+                    phase_name,
+                    exc_info=True,
                 )
 
     # ------------------------------------------------------------------
@@ -496,10 +507,7 @@ class Pipeline:
                 # Reserve a held-out fraction for post-training evaluation so
                 # we do not measure performance on the same data we trained on.
                 _min_eval_samples = 25
-                eval_split_ratio = (
-                    self.config.get("evaluation", {})
-                    .get("eval_split_ratio", 0.2)
-                )
+                eval_split_ratio = self.config.get("evaluation", {}).get("eval_split_ratio", 0.2)
                 base_for_split = (
                     self._wake_dataset if self._wake_dataset is not None else self._dataset
                 )
@@ -514,7 +522,9 @@ class Pipeline:
                     self._eval_dataset = base_for_split.select(eval_indices)
                     logger.info(
                         "Train/eval split: %d train, %d eval (ratio=%.2f).",
-                        n_train, n_eval, eval_split_ratio,
+                        n_train,
+                        n_eval,
+                        eval_split_ratio,
                     )
                 else:
                     if eval_split_ratio > 0.0:
@@ -539,11 +549,15 @@ class Pipeline:
                 nightmare_data = nightmare_gen.generate(nightmare_base)
 
                 # Create trainer (loads model + tokenizer)
+                self.callback_manager = CallbackManager()
                 self._trainer = Trainer(
                     config=self.config,
                     distributed=self.distributed,
                     resume_dir=self.resume_dir,
+                    callback_manager=self.callback_manager,
                 )
+                self.callback_manager.on_all(self._on_training_event)
+
                 self._trainer.run_id = self.run_id
 
                 # Snapshot baseline model weights for later evaluation
@@ -563,8 +577,11 @@ class Pipeline:
                     batch_size,
                 )
                 self._eval_dl = _tokenize_dataset(
-                    self._eval_dataset, self._trainer.tokenizer,
-                    text_column, max_length, batch_size,
+                    self._eval_dataset,
+                    self._trainer.tokenizer,
+                    text_column,
+                    max_length,
+                    batch_size,
                 )
                 self._dream_dl = _tokenize_dataset(
                     dream_data,

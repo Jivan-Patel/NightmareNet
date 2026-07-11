@@ -15,6 +15,11 @@ import torch.nn.functional as F  # noqa: N812
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from nightmarenet.training.callbacks import (
+    CallbackManager,
+    EventType,
+    TrainingEvent,
+)
 from nightmarenet.utils.validation import validate_positive_int
 
 logger = logging.getLogger(__name__)
@@ -37,12 +42,14 @@ class WakePhase:
         config: dict,
         device: Union[str, torch.device] = "cpu",
         scaler: Optional[torch.amp.GradScaler] = None,
+        callback_manager: Optional[CallbackManager] = None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.config = config
         self.device = device
         self.scaler = scaler
+        self.callback_manager = callback_manager
         self.max_grad_norm: float = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps: int = config.get("gradient_accumulation_steps", 1)
 
@@ -70,6 +77,14 @@ class WakePhase:
         use_amp = self.scaler is not None
 
         for epoch in range(num_epochs):
+            if self.callback_manager is not None:
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.EPOCH_START,
+                        phase="wake",
+                        epoch=epoch + 1,
+                    )
+                )
             epoch_loss = 0.0
             step_count = 0
 
@@ -94,9 +109,7 @@ class WakePhase:
                 if (step + 1) % self.gradient_accumulation_steps == 0:
                     if self.scaler is not None:
                         self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                     if self.scaler is not None:
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
@@ -118,6 +131,17 @@ class WakePhase:
                 avg_epoch_loss,
             )
             total_loss += avg_epoch_loss
+
+            if self.callback_manager is not None:
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.EPOCH_END,
+                        phase="wake",
+                        epoch=epoch + 1,
+                        metrics={"avg_loss": avg_epoch_loss},
+                    )
+                )
+
 
         return {
             "phase": "wake",
@@ -150,6 +174,7 @@ class DreamPhase:
         reference_model: Optional[torch.nn.Module] = None,
         kl_weight: float = 0.1,
         scaler: Optional[torch.amp.GradScaler] = None,
+        callback_manager: Optional[CallbackManager] = None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -160,6 +185,7 @@ class DreamPhase:
         self.scaler = scaler
         self.max_grad_norm = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
+        self.callback_manager = callback_manager
 
     def _compute_kl_loss(
         self,
@@ -212,6 +238,15 @@ class DreamPhase:
         use_amp = self.scaler is not None
 
         for epoch in range(num_epochs):
+            if self.callback_manager is not None:
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.EPOCH_START,
+                        phase="dream",
+                        epoch=epoch + 1,
+                    )
+                )
+
             epoch_loss = 0.0
             epoch_kl = 0.0
             step_count = 0
@@ -242,9 +277,7 @@ class DreamPhase:
                 if (step + 1) % self.gradient_accumulation_steps == 0:
                     if self.scaler is not None:
                         self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                     if self.scaler is not None:
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
@@ -271,6 +304,19 @@ class DreamPhase:
             )
             total_loss += avg_epoch_loss
             total_kl += avg_epoch_kl
+
+            if self.callback_manager is not None:
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.EPOCH_END,
+                        phase="dream",
+                        epoch=epoch + 1,
+                        metrics={
+                            "avg_loss": avg_epoch_loss,
+                            "avg_kl_loss": avg_epoch_kl,
+                        },
+                    )
+                )
 
         return {
             "phase": "dream",
@@ -302,11 +348,13 @@ class NightmarePhase:
         device: Union[str, torch.device] = "cpu",
         lr_multiplier: float = 2.0,
         scaler: Optional[torch.amp.GradScaler] = None,
+        callback_manager: Optional[CallbackManager] = None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.config = config
         self.device = device
+        self.callback_manager = callback_manager
         if lr_multiplier <= 0:
             raise ValueError(f"lr_multiplier must be > 0, got {lr_multiplier}")
         self.lr_multiplier = lr_multiplier
@@ -364,6 +412,14 @@ class NightmarePhase:
 
         try:
             for epoch in range(num_epochs):
+                if self.callback_manager is not None:
+                    self.callback_manager.emit(
+                        TrainingEvent(
+                            event_type=EventType.EPOCH_START,
+                            phase="nightmare",
+                            epoch=epoch + 1,
+                        )
+                    )
                 epoch_loss = 0.0
                 step_count = 0
 
@@ -391,9 +447,7 @@ class NightmarePhase:
                     if (step + 1) % self.gradient_accumulation_steps == 0:
                         if self.scaler is not None:
                             self.scaler.unscale_(self.optimizer)
-                        torch.nn.utils.clip_grad_norm_(
-                            self.model.parameters(), self.max_grad_norm
-                        )
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                         if self.scaler is not None:
                             self.scaler.step(self.optimizer)
                             self.scaler.update()
@@ -414,6 +468,15 @@ class NightmarePhase:
                     num_epochs,
                     avg_epoch_loss,
                 )
+                if self.callback_manager is not None:
+                    self.callback_manager.emit(
+                        TrainingEvent(
+                            event_type=EventType.EPOCH_END,
+                            phase="nightmare",
+                            epoch=epoch + 1,
+                            metrics={"avg_loss": avg_epoch_loss},
+                        )
+                    )
                 total_loss += avg_epoch_loss
         finally:
             # Restore original learning rate from saved values
@@ -444,11 +507,13 @@ class CompressionPhase:
         config: dict,
         device: Union[str, torch.device] = "cpu",
         scaler: Optional[torch.amp.GradScaler] = None,
+        callback_manager: Optional[CallbackManager] = None,
     ) -> None:
         self.model = model
         self.config = config
         self.device = device
         self.scaler = scaler
+        self.callback_manager = callback_manager
 
     def run(
         self,
@@ -467,9 +532,7 @@ class CompressionPhase:
         pruning_ratio = self.config.get("pruning_ratio", 0.2)
         method = self.config.get("pruning_method", "magnitude")
 
-        logger.info(
-            "Compression Phase - Method: %s, Ratio: %.2f", method, pruning_ratio
-        )
+        logger.info("Compression Phase - Method: %s, Ratio: %.2f", method, pruning_ratio)
 
         if method == "magnitude":
             try:
@@ -491,11 +554,17 @@ class CompressionPhase:
             and optimizer is not None
         ):
             finetune_epochs = self.config.get("finetune_epochs", 1)
-            logger.info(
-                "Fine-tuning after compression for %d epoch(s)...", finetune_epochs
-            )
+            logger.info("Fine-tuning after compression for %d epoch(s)...", finetune_epochs)
             self.model.train()
             for epoch in range(finetune_epochs):
+                if self.callback_manager is not None:
+                    self.callback_manager.emit(
+                        TrainingEvent(
+                            event_type=EventType.EPOCH_START,
+                            phase="compression",
+                            epoch=epoch + 1,
+                        )
+                    )
                 for batch in tqdm(
                     dataloader, desc=f"Post-compression fine-tune - Epoch {epoch + 1}"
                 ):
@@ -519,6 +588,15 @@ class CompressionPhase:
                         loss.backward()
                         optimizer.step()
                     optimizer.zero_grad()
+
+                if self.callback_manager is not None:
+                    self.callback_manager.emit(
+                        TrainingEvent(
+                            event_type=EventType.EPOCH_END,
+                            phase="compression",
+                            epoch=epoch + 1,
+                        )
+                    )
 
         return {
             "phase": "compression",
