@@ -806,18 +806,22 @@ class Pipeline:
                 auto_push_repo = tracking_cfg.get("auto_push_hub")
                 if auto_push_repo:
                     import tempfile
+
                     from nightmarenet.hub.core import push_model
-                    
-                    logger.info("Automated post-training synchronization triggered for hub: %s", auto_push_repo)
+
+                    logger.info(
+                        "Automated post-training synchronization triggered for hub: %s",
+                        auto_push_repo
+                    )
                     try:
                         with tempfile.TemporaryDirectory() as tmp_dir:
-                            # Localize model weights, tokenizer, and evaluation reports
                             self.export(tmp_dir)
-                            
-                            # Fire the optional dependency hub uploader
                             push_model(model_dir=tmp_dir, repo_id=auto_push_repo)
                     except Exception as upload_err:
-                        logger.error("Automated HuggingFace Hub push sequence failed: %s", upload_err)
+                        logger.error(
+                            "Automated HuggingFace Hub push sequence failed: %s",
+                            upload_err
+                        )
 
                 return comparison
             except Exception as exc:
@@ -912,51 +916,11 @@ class Pipeline:
             hf_dataset=hf_dataset,
             hf_subset=hf_subset,
         )
-        
+
         self.optimize()
         self.prepare()
         self.train()
-        comparison = self.evaluate()
-
-        if export_dir:
-            self.export(export_dir)
-
-     # ── Automated HuggingFace Hub Push Gating ──────────────────
-        tracking_cfg = self.config.get("tracking", {})
-        auto_push_repo = tracking_cfg.get("auto_push_hub")
-        if auto_push_repo:
-            import tempfile
-            from nightmarenet.hub.core import push_model
-                    
-            logger.info("Automated post-training synchronization triggered for hub: %s", auto_push_repo)
-            try:
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    # Localize model weights, tokenizer, and evaluation reports
-                    self.export(tmp_dir)
-                            
-                    # Generate structural metadata for the automated model card
-                    import yaml
-                    from pathlib import Path
-                            
-                    meta_payload = {
-                        "robustness_score": getattr(self, "final_robustness_score", "N/A"),
-                        "cycle_count": getattr(self, "cycle_count", 0),
-                        "distortion_families": self.config.get("distortions", {}).get("families", []),
-                        "config": self.config
-                    }
-                            
-                    meta_file_path = Path(tmp_dir) / "metadata.yaml"
-                    with open(meta_file_path, "w", encoding="utf-8") as meta_f:
-                        yaml.safe_dump(meta_payload, meta_f, default_flow_style=False)
-                            
-                    # Fire the optional dependency hub uploader with explicit metadata metrics
-                    push_model(
-                        model_dir=tmp_dir, 
-                        repo_id=auto_push_repo,
-                        metadata_path=str(meta_file_path)
-                    )
-            except Exception as upload_err:
-                logger.error("Automated HuggingFace Hub push sequence failed: %s", upload_err)
+        return self.evaluate()
 
 def create_pipeline_from_config(
     config_path: str = "configs/default.yaml",

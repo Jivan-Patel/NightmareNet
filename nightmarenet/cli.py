@@ -12,9 +12,9 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional
-from nightmarenet.hub.core import push_model, pull_model
 
 from nightmarenet import __version__
+from nightmarenet.hub.core import pull_model, push_model
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -644,19 +644,44 @@ def build_parser() -> argparse.ArgumentParser:
         "--measure", action="store_true", help="Measure transfer efficiency"
     )
     transfer_parser.add_argument("--transferred", help="Path to transferred evaluation JSON")
-    transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")                                                                          
+    transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")
+
     # push command parsing mapping
-    push_parser = subparsers.add_parser("push", help="Upload a hardened model directory to HuggingFace Hub")
-    push_parser.add_argument("--model", required=True, help="Path to local trained checkpoint directory")
-    push_parser.add_argument("--hub", required=True, help="Target HuggingFace repository destination space (org/repo)")
-    push_parser.add_argument("--metadata", help="Optional path to training log metadata file (YAML)")
+    push_parser = subparsers.add_parser(
+        "push",
+        help="Upload a hardened model directory to HuggingFace Hub"
+    )
+    push_parser.add_argument(
+        "--model",
+        required=True,
+        help="Path to local trained checkpoint directory"
+    )
+    push_parser.add_argument(
+        "--hub",
+        required=True,
+        help="Target HuggingFace repository destination space (org/repo)"
+    )
+    push_parser.add_argument(
+        "--metadata",
+        help="Optional path to training log metadata file (YAML)"
+    )
 
     # pull command parsing mapping
-    pull_parser = subparsers.add_parser("pull", help="Download a pre-hardened model snapshot layout locally")
-    pull_parser.add_argument("--repo", required=True, help="Target HuggingFace source space handle (org/repo)")
-    pull_parser.add_argument("--output", required=True, help="Target output directory vector to write weights artifacts into")
+    pull_parser = subparsers.add_parser(
+        "pull",
+        help="Download a pre-hardened model snapshot layout locally"
+    )
+    pull_parser.add_argument(
+        "--repo",
+        required=True,
+        help="Target HuggingFace source space handle (org/repo)"
+    )
+    pull_parser.add_argument(
+        "--output",
+        required=True,
+        help="Target output directory vector to write weights artifacts into"
+    )
 
-                                                                                    
     return parser
 
 
