@@ -95,6 +95,7 @@ evaluation:
   # is opt-in and budget-capped rather than running by default.
   certification:
     n: 1000                # Number of noisy forward passes per sample (estimation stage)
+    n0: 100                # Number of selection-stage samples (picks the candidate class)
     sigma: 0.1             # Gaussian noise standard deviation in embedding space
     alpha: 0.001           # Significance level for Clopper-Pearson bound (99.9% confidence)
     batch_size: 100        # Batch size for noisy copies per forward pass

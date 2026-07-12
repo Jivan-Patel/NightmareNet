@@ -1,5 +1,6 @@
 """Tests for evaluation metrics and comparison."""
 
+
 import pytest
 import torch
 import torch.nn as nn
@@ -215,6 +216,7 @@ class TestCertificationIntegration:
             metrics=["certification"],
             certification_config={
                 "n": 15,
+                "n0": 7,
                 "sigma": 0.33,
                 "alpha": 0.02,
                 "batch_size": 5,
@@ -226,6 +228,8 @@ class TestCertificationIntegration:
 
         evaluator.evaluate(clean_dataloader=None, base_dataset=dataset)
 
+        assert captured["n"] == 15
+        assert captured["n0"] == 7
         assert captured["sigma"] == 0.33
         assert captured["alpha"] == 0.02
         assert captured["batch_size"] == 5
@@ -305,7 +309,7 @@ class TestCertificationIntegration:
                 "certification_abstain_rate": 0.3,
                 "certified_accuracy": 0.8,
                 "samples_certified": 10,
-                "budget_exceeded": False,
+                "budget_exceeded": True,
             },
         }
 
@@ -317,3 +321,6 @@ class TestCertificationIntegration:
         assert cert_comparison["trained"]["certified_radius_mean"] == 0.2
         assert cert_comparison["deltas"]["certified_radius_mean"] == pytest.approx(0.1)
         assert cert_comparison["deltas"]["certification_abstain_rate"] == pytest.approx(-0.2)
+        # bool is a subtype of int in Python -- budget_exceeded must not sneak into the
+        # numeric deltas (True - False == 1 would be a meaningless "delta").
+        assert "budget_exceeded" not in cert_comparison["deltas"]

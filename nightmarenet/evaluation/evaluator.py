@@ -299,6 +299,7 @@ class Evaluator:
         """
         cert_config = self.eval_config.get("certification", {})
         n = cert_config.get("n", 1000)
+        n0 = cert_config.get("n0", 100)
         subset_size = cert_config.get("subset_size", 50)
         budget = cert_config.get("budget")
 
@@ -324,6 +325,7 @@ class Evaluator:
             label_column=cert_config.get("label_column", "label"),
             sigma=cert_config.get("sigma", 0.1),
             n=n,
+            n0=n0,
             alpha=cert_config.get("alpha", 0.001),
             subset_size=subset_size,
             batch_size=cert_config.get("batch_size", 100),
@@ -369,13 +371,20 @@ class Evaluator:
                 "trained": trained,
             }
 
-            # Compute deltas for key numeric fields
+            # Compute deltas for key numeric fields. bool is a subtype of int in Python,
+            # so it's explicitly excluded here -- otherwise flags like budget_exceeded
+            # would silently get a meaningless numeric delta (e.g. True - False == 1).
             deltas = {}
             for key in baseline:
-                if isinstance(baseline.get(key), (int, float)) and isinstance(
-                    trained.get(key), (int, float)
+                baseline_val = baseline.get(key)
+                trained_val = trained.get(key)
+                if (
+                    isinstance(baseline_val, (int, float))
+                    and not isinstance(baseline_val, bool)
+                    and isinstance(trained_val, (int, float))
+                    and not isinstance(trained_val, bool)
                 ):
-                    deltas[key] = trained[key] - baseline[key]
+                    deltas[key] = trained_val - baseline_val
             metric_comparison["deltas"] = deltas
 
             # Add statistical significance testing for robustness (per-strength scores)
