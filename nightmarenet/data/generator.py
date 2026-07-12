@@ -209,6 +209,17 @@ class NightmareDatasetGenerator:
                 "Must be one of: uniform, linear, cosine, step"
             )
 
+        if self.strength_schedule != "uniform":
+            logger.warning(
+                "strength_schedule is non-uniform; nightmare_strength config will be ignored. "
+                "Only strength_min and strength_max are used."
+            )
+
+        if self.strength_min > self.strength_max:
+            logger.warning(
+                "strength_min > strength_max; schedule will decrease over batch."
+            )
+
     def _compute_strengths(self, num_samples: int) -> list[float]:
         """Compute per-sample distortion strengths based on schedule.
 

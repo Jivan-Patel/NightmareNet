@@ -44,7 +44,10 @@ training:
 # Distortion configuration
 distortion:
   dream_strength: 0.25   # Mild distortions for dream phase
-  nightmare_strength: 0.8 # Extreme perturbations for nightmare phase
+  nightmare_strength: 0.8 # Extreme perturbations for nightmare phase (ignored for non-uniform schedules)
+  strength_schedule: uniform # uniform|linear|cosine|step (within-epoch scheduling for nightmare phase)
+  strength_min: 0.3 # Min strength for non-uniform schedules
+  strength_max: 0.9 # Max strength for non-uniform schedules
   # Per-distortion type weights (probability of applying each)
   text:
     char_swap: 0.3
