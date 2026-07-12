@@ -248,7 +248,13 @@ class TestCertificationIntegration:
         )
         dataset = _CertListDataset([{"text": "a", "label": 0} for _ in range(10)])
 
-        with caplog.at_level("WARNING"):
+        # Target the evaluator's logger by name (not just the root/default level).
+        # nightmarenet/utils/logging_config.setup_logging() sets propagate=False on the
+        # "nightmarenet" logger the first time it's called anywhere in the test session --
+        # after that, records from child loggers like this one never reach the root
+        # logger, so caplog.at_level("WARNING") alone would silently miss them depending
+        # on test execution order. Attaching directly to the named logger sidesteps that.
+        with caplog.at_level("WARNING", logger="nightmarenet.evaluation.evaluator"):
             results = evaluator.evaluate(clean_dataloader=None, base_dataset=dataset)
 
         cert = results["certification"]
