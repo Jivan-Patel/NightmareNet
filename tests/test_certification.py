@@ -225,10 +225,6 @@ class TestForwardHookNoiseInjection:
         input_ids = torch.tensor([[1, 2, 3]])
         with pytest.raises(ValueError):
             _run_noisy_forward_passes(
-<<<<<<< HEAD
-                fake_model, input_ids, None, sigma=0.5, n=20,
-                num_classes=2, batch_size=0, device="cpu",
-=======
                 fake_model,
                 input_ids,
                 None,
@@ -237,17 +233,12 @@ class TestForwardHookNoiseInjection:
                 num_classes=2,
                 batch_size=0,
                 device="cpu",
->>>>>>> 714f347 (style: format certification tests)
             )
 
     def test_negative_batch_size_raises_rather_than_hanging(self, fake_model):
         input_ids = torch.tensor([[1, 2, 3]])
         with pytest.raises(ValueError):
             _run_noisy_forward_passes(
-<<<<<<< HEAD
-                fake_model, input_ids, None, sigma=0.5, n=20,
-                num_classes=2, batch_size=-5, device="cpu",
-=======
                 fake_model,
                 input_ids,
                 None,
@@ -256,17 +247,12 @@ class TestForwardHookNoiseInjection:
                 num_classes=2,
                 batch_size=-5,
                 device="cpu",
->>>>>>> 714f347 (style: format certification tests)
             )
 
     def test_restores_eval_mode_after_certification(self, fake_model):
         fake_model.eval()
         input_ids = torch.tensor([[1, 2, 3]])
         _run_noisy_forward_passes(
-<<<<<<< HEAD
-            fake_model, input_ids, None, sigma=0.5, n=20,
-            num_classes=2, batch_size=10, device="cpu",
-=======
             fake_model,
             input_ids,
             None,
@@ -275,7 +261,6 @@ class TestForwardHookNoiseInjection:
             num_classes=2,
             batch_size=10,
             device="cpu",
->>>>>>> 714f347 (style: format certification tests)
         )
         assert fake_model.training is False
 
@@ -286,10 +271,6 @@ class TestForwardHookNoiseInjection:
         fake_model.train()
         input_ids = torch.tensor([[1, 2, 3]])
         _run_noisy_forward_passes(
-<<<<<<< HEAD
-            fake_model, input_ids, None, sigma=0.5, n=20,
-            num_classes=2, batch_size=10, device="cpu",
-=======
             fake_model,
             input_ids,
             None,
@@ -298,7 +279,6 @@ class TestForwardHookNoiseInjection:
             num_classes=2,
             batch_size=10,
             device="cpu",
->>>>>>> 714f347 (style: format certification tests)
         )
         assert fake_model.training is True
 
@@ -313,10 +293,6 @@ class TestForwardHookNoiseInjection:
 
         with pytest.raises(RuntimeError):
             _run_noisy_forward_passes(
-<<<<<<< HEAD
-                fake_model, input_ids, None, sigma=0.5, n=20,
-                num_classes=2, batch_size=10, device="cpu",
-=======
                 fake_model,
                 input_ids,
                 None,
@@ -325,7 +301,6 @@ class TestForwardHookNoiseInjection:
                 num_classes=2,
                 batch_size=10,
                 device="cpu",
->>>>>>> 714f347 (style: format certification tests)
             )
         assert fake_model.training is True
 
@@ -341,10 +316,6 @@ class TestCertifySampleAbstention:
         # the p_A > 0.5 confidence bar at a small sample size.
         torch.manual_seed(0)
         result = certify_sample(
-<<<<<<< HEAD
-            fake_model, fake_tokenizer, "irrelevant text",
-            sigma=0.5, n0=20, n=50, alpha=0.01,
-=======
             fake_model,
             fake_tokenizer,
             "irrelevant text",
@@ -352,7 +323,6 @@ class TestCertifySampleAbstention:
             n0=20,
             n=50,
             alpha=0.01,
->>>>>>> 714f347 (style: format certification tests)
         )
         assert isinstance(result, CertificationResult)
         assert result.abstained is True
@@ -364,10 +334,6 @@ class TestCertifySampleAbstention:
         torch.manual_seed(3)
 
         result = certify_sample(
-<<<<<<< HEAD
-            fake_model, fake_tokenizer, "irrelevant text", label=1,
-            sigma=0.1, n0=20, n=200, alpha=0.001,
-=======
             fake_model,
             fake_tokenizer,
             "irrelevant text",
@@ -376,7 +342,6 @@ class TestCertifySampleAbstention:
             n0=20,
             n=200,
             alpha=0.001,
->>>>>>> 714f347 (style: format certification tests)
         )
 
         assert result.abstained is False
@@ -388,10 +353,6 @@ class TestCertifySampleAbstention:
 
     def test_certification_budget_preserves_n0_reduces_n_first(self, fake_model, fake_tokenizer):
         result = certify_sample(
-<<<<<<< HEAD
-            fake_model, fake_tokenizer, "irrelevant text",
-            sigma=0.5, n0=20, n=1000, alpha=0.01, certification_budget=50,
-=======
             fake_model,
             fake_tokenizer,
             "irrelevant text",
@@ -400,16 +361,11 @@ class TestCertifySampleAbstention:
             n=1000,
             alpha=0.01,
             certification_budget=50,
->>>>>>> 714f347 (style: format certification tests)
         )
         assert result.n_samples_used <= 50
 
     def test_budget_smaller_than_n0_reduces_n0_too(self, fake_model, fake_tokenizer):
         result = certify_sample(
-<<<<<<< HEAD
-            fake_model, fake_tokenizer, "irrelevant text",
-            sigma=0.5, n0=100, n=1000, alpha=0.01, certification_budget=25,
-=======
             fake_model,
             fake_tokenizer,
             "irrelevant text",
@@ -418,17 +374,12 @@ class TestCertifySampleAbstention:
             n=1000,
             alpha=0.01,
             certification_budget=25,
->>>>>>> 714f347 (style: format certification tests)
         )
         assert result.n_samples_used <= 25
         assert result.abstained is True  # no budget left for the estimation stage
 
     def test_zero_budget_abstains_without_running_inference(self, fake_model, fake_tokenizer):
         result = certify_sample(
-<<<<<<< HEAD
-            fake_model, fake_tokenizer, "irrelevant text",
-            sigma=0.5, n0=100, n=1000, alpha=0.01, certification_budget=0,
-=======
             fake_model,
             fake_tokenizer,
             "irrelevant text",
@@ -437,7 +388,6 @@ class TestCertifySampleAbstention:
             n=1000,
             alpha=0.01,
             certification_budget=0,
->>>>>>> 714f347 (style: format certification tests)
         )
         assert result.abstained is True
         assert result.n_samples_used == 0
@@ -445,14 +395,7 @@ class TestCertifySampleAbstention:
 
 class TestCertifySampleSelectionIndependence:
     def test_selection_and_estimation_use_independent_noise_draws(
-<<<<<<< HEAD
-       self,
-       fake_model,
-       fake_tokenizer,
-       monkeypatch,
-=======
         self, fake_model, fake_tokenizer, monkeypatch
->>>>>>> 714f347 (style: format certification tests)
     ):
         """The two-stage design must call _run_noisy_forward_passes twice (once for
         selection with n0, once for estimation with n) rather than reusing one batch for
@@ -460,59 +403,6 @@ class TestCertifySampleSelectionIndependence:
         fixes (picking the plurality class, then testing significance on the same votes
         that were used to pick it, overstates confidence)."""
         import nightmarenet.evaluation.certification as certification_module
-<<<<<<< HEAD
-
-        call_ns = []
-        original = certification_module._run_noisy_forward_passes
-
-        def spy(*args, **kwargs):
-            call_ns.append(args[4])  # n is the 5th positional arg
-            return original(*args, **kwargs)
-
-        monkeypatch.setattr(certification_module, "_run_noisy_forward_passes", spy)
-
-        torch.manual_seed(1)
-        certify_sample(
-           fake_model,
-           fake_tokenizer,
-           "text",
-           sigma=0.5,
-           n0=17,
-           n=33,
-           alpha=0.05,
-      )
-
-        assert call_ns == [17, 33]  # two separate calls, selection then estimation
-
-
-class TestCertifySampleDeterminism:
-    def test_identical_seed_gives_identical_result(
-       self,
-       fake_model,
-       fake_tokenizer,
-    ):
-       torch.manual_seed(1234)
-       result_a = certify_sample(
-        fake_model,
-        fake_tokenizer,
-        "same text",
-        sigma=0.5,
-        n0=30,
-        n=100,
-        alpha=0.01,
-       )
-
-       torch.manual_seed(1234)
-       result_b = certify_sample(
-        fake_model,
-        fake_tokenizer,
-        "same text",
-        sigma=0.5,
-        n0=30,
-        n=100,
-        alpha=0.01,
-      )
-=======
 
         call_ns = []
         original = certification_module._run_noisy_forward_passes
@@ -540,15 +430,10 @@ class TestCertifySampleDeterminism:
         result_b = certify_sample(
             fake_model, fake_tokenizer, "same text", sigma=0.5, n0=30, n=100, alpha=0.01
         )
->>>>>>> 714f347 (style: format certification tests)
 
         assert result_a == result_b
 
-    def test_batch_size_does_not_change_sample_count_or_validity(
-      self,
-      fake_model,
-      fake_tokenizer,
-    ):
+    def test_batch_size_does_not_change_sample_count_or_validity(self, fake_model, fake_tokenizer):
         """Chunking for memory-bounded inference must not change *how many* samples are
         drawn or produce an invalid histogram -- but see the note in
         _run_noisy_forward_passes: PyTorch's CPU torch.randn/normal_ kernel is internally
@@ -564,28 +449,6 @@ class TestCertifySampleDeterminism:
         """
         torch.manual_seed(42)
         result_one_batch = certify_sample(
-<<<<<<< HEAD
-         fake_model,
-         fake_tokenizer,
-         "same text",
-         sigma=0.5,
-         n0=10,
-         n=90,
-         alpha=0.05,
-         batch_size=1000,
-       )
-        torch.manual_seed(42)
-        result_chunked = certify_sample(
-         fake_model,
-         fake_tokenizer,
-         "same text",
-         sigma=0.5,
-         n0=10,
-         n=90,
-         alpha=0.05,
-         batch_size=7,
-       )
-=======
             fake_model,
             fake_tokenizer,
             "same text",
@@ -606,7 +469,6 @@ class TestCertifySampleDeterminism:
             alpha=0.05,
             batch_size=7,
         )
->>>>>>> 714f347 (style: format certification tests)
         assert result_one_batch.n_samples_used == result_chunked.n_samples_used == 100
         for result in (result_one_batch, result_chunked):
             assert result.prediction in (0, 1)
@@ -639,25 +501,17 @@ class _ListDataset:
 
 
 class TestCertifyDataset:
-    def test_empty_dataset_returns_zeroed_summary(
-      self,
-      fake_model,
-      fake_tokenizer,
-   ):
-      result = certify_dataset(
-        fake_model,
-        fake_tokenizer,
-        _ListDataset([]),
-      )
+    def test_empty_dataset_returns_zeroed_summary(self, fake_model, fake_tokenizer):
+        result = certify_dataset(
+            fake_model,
+            fake_tokenizer,
+            _ListDataset([]),
+        )
         assert result["n_samples"] == 0
         assert result["certified_radius_mean"] == 0.0
         assert result["certification_abstain_rate"] == 0.0
 
-    def test_aggregates_across_samples(
-        self,
-        fake_model,
-        fake_tokenizer,
-    ):
+    def test_aggregates_across_samples(self, fake_model, fake_tokenizer):
         with torch.no_grad():
             fake_model.embedding.weight.fill_(5.0)
         torch.manual_seed(5)
@@ -671,15 +525,6 @@ class TestCertifyDataset:
         )
 
         summary = certify_dataset(
-<<<<<<< HEAD
-          fake_model,
-          fake_tokenizer,
-          dataset,
-          sigma=0.1,
-          n=100,
-          alpha=0.001,
-       ) 
-=======
             fake_model,
             fake_tokenizer,
             dataset,
@@ -687,63 +532,15 @@ class TestCertifyDataset:
             n=100,
             alpha=0.001,
         )
->>>>>>> 714f347 (style: format certification tests)
 
         assert summary["n_samples"] == 3
         assert 0.0 <= summary["certification_abstain_rate"] <= 1.0
         assert (
-          summary["certified_accuracy"] is None
-          or 0.0 <= summary["certified_accuracy"] <= 1.0
+            summary["certified_accuracy"] is None
+            or 0.0 <= summary["certified_accuracy"] <= 1.0
         )
         assert len(summary["results"]) == 3
 
-<<<<<<< HEAD
-    def test_budget_total_divided_across_samples_exactly(
-       self,
-       fake_model,
-       fake_tokenizer,
-    ):
-       dataset = _ListDataset(
-          [{"text": "a", "label": 0} for _ in range(10)]
-       )
-
-       summary = certify_dataset(
-        fake_model,
-        fake_tokenizer,
-        dataset,
-        sigma=0.5,
-        n=1000,
-        alpha=0.01,
-        certification_budget_total=100,
-       )
-        total_used = sum(r.n_samples_used for r in summary["results"])
-        assert total_used <= 100  # must never exceed the declared total, even summed
-
-    def test_budget_smaller_than_sample_count_never_exceeds_total(
-       self,
-       fake_model,
-       fake_tokenizer,
-    ):
-        # Regression test: budget=1 spread over 10 samples must never let each sample get
-        # a floor of 1 pass (which would total 10, 10x the declared budget).
-        dataset = _ListDataset([{"text": "a", "label": 0} for _ in range(10)])
-        summary = certify_dataset(
-            fake_model, fake_tokenizer, dataset,
-            sigma=0.5, n=1000, alpha=0.01, certification_budget_total=1,
-        )
-        total_used = sum(r.n_samples_used for r in summary["results"])
-        assert total_used <= 1
-
-    def test_zero_total_budget_all_samples_abstain(
-       self,
-       fake_model,
-       fake_tokenizer,
-    ):
-        dataset = _ListDataset([{"text": "a", "label": 0} for _ in range(5)])
-        summary = certify_dataset(
-            fake_model, fake_tokenizer, dataset,
-            sigma=0.5, n=1000, alpha=0.01, certification_budget_total=0,
-=======
     def test_budget_total_divided_across_samples_exactly(self, fake_model, fake_tokenizer):
         dataset = _ListDataset([{"text": "a", "label": 0} for _ in range(10)])
         summary = certify_dataset(
@@ -784,33 +581,15 @@ class TestCertifyDataset:
             n=1000,
             alpha=0.01,
             certification_budget_total=0,
->>>>>>> 714f347 (style: format certification tests)
         )
         assert summary["certification_abstain_rate"] == 1.0
         assert all(r.n_samples_used == 0 for r in summary["results"])
 
-<<<<<<< HEAD
-   def test_aggregate_metrics_include_abstained_samples(
-       self,
-       fake_model,
-       fake_tokenizer,
-   ):
-=======
     def test_aggregate_metrics_include_abstained_samples(self, fake_model, fake_tokenizer):
->>>>>>> 714f347 (style: format certification tests)
         """A dataset where every sample abstains (near-uniform, zero embedding, tiny n)
         must report a mean/median radius of exactly 0.0 and certified_accuracy of 0.0 --
         not exclude the abstained samples and report an undefined/misleadingly-high value."""
         torch.manual_seed(0)
-<<<<<<< HEAD
-        dataset = _ListDataset([
-            {"text": "a", "label": 0},
-            {"text": "b", "label": 1},
-        ])
-        summary = certify_dataset(
-            fake_model, fake_tokenizer, dataset,
-            sigma=0.5, n0=5, n=5, alpha=0.5,  # tiny samples, generous alpha but zero-signal model
-=======
         dataset = _ListDataset(
             [
                 {"text": "a", "label": 0},
@@ -825,7 +604,6 @@ class TestCertifyDataset:
             n0=5,
             n=5,
             alpha=0.5,  # tiny samples, generous alpha but zero-signal model
->>>>>>> 714f347 (style: format certification tests)
         )
         assert all(r.abstained for r in summary["results"])
         assert summary["certified_radius_mean"] == 0.0
