@@ -469,7 +469,7 @@ class Trainer:
                 num_warmup_steps=warmup_steps,
                 num_training_steps=total_steps,
             )
-        elif warmup_steps > 0:
+        elif lr_schedule != "none" and warmup_steps > 0:
             def warmup_lambda(current_step):
                 return min(1.0, current_step / warmup_steps)
 

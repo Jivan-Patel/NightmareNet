@@ -1,17 +1,21 @@
 import os
 
+import pytest
 import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Configure offline mode globally to prevent HF hub connection timeouts
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-
 from nightmarenet.training.phases import NightmarePhase
 from nightmarenet.training.trainer import Trainer
+
+
+@pytest.fixture(autouse=True)
+def _offline_mode(monkeypatch):
+    """Prevent HF hub connections during tests."""
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 def _make_tiny_dataset(n: int = 10) -> Dataset:
@@ -172,7 +176,7 @@ class TestLRScheduler:
         assert lrs_sampled[8] < lrs_sampled[5]
 
     def test_lr_scheduler_backward_compatibility(self, tmp_path):
-        """Test that lr_schedule = 'none' disables the scheduler."""
+        """Test that lr_schedule = 'none' disables the scheduler even with warmup_steps > 0."""
         model, tokenizer = _get_mock_model_and_tokenizer()
 
         base_ds = _make_tiny_dataset(4)
@@ -187,7 +191,7 @@ class TestLRScheduler:
                 "nightmare_epochs": 0,
                 "batch_size": 2,
                 "learning_rate": 5e-5,
-                "warmup_steps": 0,
+                "warmup_steps": 100,
                 "lr_schedule": "none",
                 "gradient_accumulation_steps": 1,
                 "save_every_phase": False,
