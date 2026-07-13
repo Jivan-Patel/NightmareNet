@@ -1,6 +1,7 @@
 """Tests for evaluation metrics and comparison."""
 
 import logging
+from pathlib import Path
 
 import pytest
 import torch
@@ -140,7 +141,7 @@ def test_bootstrap_ci_custom_alpha():
 
 
 class TestCertificationIntegration:
-    def test_certification_not_run_when_not_enabled(self, tmp_path):
+    def test_certification_not_run_when_not_enabled(self, tmp_path: Path):
         """Existing behavior is unchanged when certification isn't opted into: no
         regression, and the key is simply absent rather than erroring."""
         evaluator = _make_cert_evaluator(tmp_path, metrics=["recall"])
@@ -150,7 +151,7 @@ class TestCertificationIntegration:
 
         assert "certification" not in results
 
-    def test_certification_skipped_without_base_dataset(self, tmp_path):
+    def test_certification_skipped_without_base_dataset(self, tmp_path: Path):
         """Even when enabled, certification needs a dataset to certify -- it should be
         skipped (not error) if base_dataset isn't provided, same as robustness."""
         evaluator = _make_cert_evaluator(tmp_path, metrics=["certification"])
@@ -159,7 +160,7 @@ class TestCertificationIntegration:
 
         assert "certification" not in results
 
-    def test_certification_produces_expected_output_keys(self, tmp_path):
+    def test_certification_produces_expected_output_keys(self, tmp_path: Path):
         """Integration test: evaluate() with certification in metrics list produces the
         expected output keys (issue #161 acceptance criteria)."""
         evaluator = _make_cert_evaluator(
@@ -198,7 +199,11 @@ class TestCertificationIntegration:
         assert 0.0 <= cert["certification_abstain_rate"] <= 1.0
         assert cert["budget_exceeded"] is False
 
-    def test_certification_config_read_from_namespace(self, tmp_path, monkeypatch):
+    def test_certification_config_read_from_namespace(
+            self,
+            tmp_path: Path,
+            monkeypatch: pytest.MonkeyPatch
+):
         """Config values must be read from evaluation.certification, not hardcoded
         defaults -- verified by checking certify_dataset receives them."""
         captured = {}
@@ -236,7 +241,7 @@ class TestCertificationIntegration:
         assert captured["batch_size"] == 5
         assert captured["subset_size"] == 1
 
-    def test_certification_budget_reduces_n_and_flags_exceeded(self, tmp_path):
+    def test_certification_budget_reduces_n_and_flags_exceeded(self, tmp_path: Path):
         """Budget control: when n * subset_size exceeds budget, n is reduced
         proportionally, budget_exceeded is flagged, and a warning is logged."""
         evaluator = _make_cert_evaluator(
@@ -284,7 +289,7 @@ class TestCertificationIntegration:
         assert cert["budget_exceeded"] is True
         assert any("budget" in record.getMessage().lower() for record in records)
 
-    def test_certification_within_budget_not_flagged(self, tmp_path):
+    def test_certification_within_budget_not_flagged(self, tmp_path: Path):
         """When n * subset_size is within budget, no reduction happens."""
         evaluator = _make_cert_evaluator(
             tmp_path,
@@ -304,7 +309,7 @@ class TestCertificationIntegration:
 
         assert results["certification"]["budget_exceeded"] is False
 
-    def test_compare_includes_certification_results(self, tmp_path):
+    def test_compare_includes_certification_results(self, tmp_path: Path):
         """compare() folds certification into the comparison dict alongside other
         metrics, using the same generic baseline/trained/deltas shape."""
         evaluator = _make_cert_evaluator(tmp_path, metrics=["certification"])
@@ -343,3 +348,42 @@ class TestCertificationIntegration:
         # bool is a subtype of int in Python -- budget_exceeded must not sneak into the
         # numeric deltas (True - False == 1 would be a meaningless "delta").
         assert "budget_exceeded" not in cert_comparison["deltas"]
+
+    def test_generate_report_includes_certification_section(self, tmp_path: Path):
+        """Report should include the Certified Robustness section when certification
+        results are available (issue #162)."""
+        evaluator = _make_cert_evaluator(tmp_path, metrics=["certification"])
+
+        comparison = {
+          "baseline_label": "baseline",
+          "trained_label": "trained",
+          "metrics": {
+              "certification": {
+                    "baseline": {
+                       "certified_radius_mean": 0.100,
+                       "certified_radius_median": 0.090,
+                       "certification_abstain_rate": 0.20,
+                       "samples_certified": 40,
+                    },
+                    "trained": {
+                       "certified_radius_mean": 0.142,
+                       "certified_radius_median": 0.128,
+                       "certification_abstain_rate": 0.12,
+                       "samples_certified": 44,
+                    },
+                    "deltas": {
+                      "certified_radius_mean": 0.042,
+                      "certified_radius_median": 0.038,
+                      "certification_abstain_rate": -0.08,
+                      "samples_certified": 4,
+                    },
+                }
+            },
+        }
+
+        report = evaluator.generate_report(comparison)
+
+        assert "Certified Robustness" in report
+        assert "0.142" in report
+        assert "0.128" in report
+        assert "44" in report

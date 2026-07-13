@@ -551,6 +551,9 @@ class Evaluator:
                 )
             lines.append("")
 
+        if "certification" in metrics and _metric_ok(metrics["certification"]):
+            lines.extend(self._format_certification_section(metrics["certification"]))
+
         if "hallucination" in metrics and _metric_ok(metrics["hallucination"]):
             r = metrics["hallucination"]
             lines.extend(
@@ -569,6 +572,108 @@ class Evaluator:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _format_certification_section(self, cert_metrics: dict) -> list:
+        """Formats the "Certified Robustness" markdown section (issue #162).
+
+        Uses the same baseline/trained/delta table shape as the other sections in
+        generate_report() (for consistency, and because the acceptance criteria for
+        issue #162 specifically calls for a baseline-vs-trained certified-radius
+        comparison), plus a callout distinguishing this formal, distribution-free
+        guarantee from the empirical Robustness (AUC) metric above it, and a
+        configuration line (noise sigma / smoothing sample count) read from
+        `evaluation.certification` -- config values that are inputs to the run, not
+        outputs, so they don't belong in the per-run baseline/trained dict itself
+        (and aren't part of _run_certification's returned keys, which several
+        existing tests pin exactly).
+
+        Args:
+            cert_metrics: metrics["certification"] from a compare() output, i.e.
+                {"baseline": {...}, "trained": {...}, "deltas": {...}}.
+
+        Returns:
+            List of markdown lines (not yet joined).
+        """
+
+        def _fmt(val, signed: bool = False) -> str:
+            if isinstance(val, float):
+                return f"{val:+.4f}" if signed else f"{val:.4f}"
+            if val is None:
+                return "N/A"
+            return str(val)
+
+        def _pct(val) -> str:
+            return f"{val * 100:.1f}%" if isinstance(val, (int, float)) else "N/A"
+
+        def _pct_signed(val) -> str:
+            return f"{val * 100:+.1f}pp" if isinstance(val, (int, float)) else "N/A"
+
+        baseline = cert_metrics.get("baseline", {})
+        trained = cert_metrics.get("trained", {})
+        deltas = cert_metrics.get("deltas", {})
+
+        cert_config = self.eval_config.get("certification", {})
+        sigma = cert_config.get("sigma", 0.1)
+        n = cert_config.get("n", 1000)
+        n0 = cert_config.get("n0", 100)
+        alpha = cert_config.get("alpha", 0.001)
+        subset_size = cert_config.get("subset_size")
+
+        def _samples_str(side: dict) -> str:
+            certified = side.get("samples_certified", "N/A")
+            total = subset_size if subset_size is not None else certified
+            return f"{certified} / {total}"
+
+        lines = [
+            "### Certified Robustness (Randomized Smoothing)",
+            "",
+            "> **Formal vs. empirical**: certified radii are a formal, "
+            "distribution-free guarantee (no perturbation with embedding-space L2 "
+            "norm below the radius can change the prediction) -- unlike the "
+            "empirical Robustness (AUC) score above, which only reflects degradation "
+            "under the specific distortions actually tried. Radii are L2 distances "
+            "in **embedding space**, not token/edit-distance space.",
+            "",
+            "| Metric | Baseline | Trained | Delta |",
+            "|--------|----------|---------|-------|",
+            (
+                f"| Mean certified radius | {_fmt(baseline.get('certified_radius_mean'))} "
+                f"| {_fmt(trained.get('certified_radius_mean'))} "
+                f"| {_fmt(deltas.get('certified_radius_mean'), signed=True)} |"
+            ),
+            (
+                f"| Median certified radius | {_fmt(baseline.get('certified_radius_median'))} "
+                f"| {_fmt(trained.get('certified_radius_median'))} "
+                f"| {_fmt(deltas.get('certified_radius_median'), signed=True)} |"
+            ),
+            (
+                f"| Abstention rate | {_pct(baseline.get('certification_abstain_rate'))} "
+                f"| {_pct(trained.get('certification_abstain_rate'))} "
+                f"| {_pct_signed(deltas.get('certification_abstain_rate'))} |"
+            ),
+            (
+                f"| Certified accuracy | {_fmt(baseline.get('certified_accuracy'))} "
+                f"| {_fmt(trained.get('certified_accuracy'))} "
+                f"| {_fmt(deltas.get('certified_accuracy'), signed=True)} |"
+            ),
+            (
+                f"| Samples certified | {_samples_str(baseline)} "
+                f"| {_samples_str(trained)} | N/A |"
+            ),
+            "",
+            f"**Configuration**: noise sigma (σ) = {sigma}, smoothing samples (n) = {n}, "
+            f"selection samples (n0) = {n0}, significance level (α) = {alpha}",
+        ]
+
+        if baseline.get("budget_exceeded") or trained.get("budget_exceeded"):
+            lines.append(
+                "> Note: the configured compute budget reduced `n` for at least one "
+                "run below (see logs) -- certified radii for that run are valid but "
+                "computed with fewer smoothing samples than requested."
+            )
+
+        lines.append("")
+        return lines
 
     def save_report(self, comparison: dict, filename: str = "evaluation_report.md") -> str:
         """Generate and save a markdown report.

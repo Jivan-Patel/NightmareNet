@@ -365,7 +365,35 @@ adds *generalization signal* (Dream) and *capacity homeostasis* (Compress) on
 top of this baseline; quantifying their incremental contribution is the
 primary task of v2.
 
-### 6.2 Limitations
+### 6.2 Certified Robustness
+
+To complement empirical adversarial evaluation, NightmareNet now supports
+randomized smoothing–based certified robustness through the
+`evaluation.certification` configuration.
+
+Unlike empirical robustness metrics, which measure observed model behavior
+under predefined adversarial perturbations, randomized smoothing provides
+formal robustness guarantees by certifying an L2 radius in the embedding
+space within which the model's prediction is guaranteed to remain unchanged
+with high probability.
+
+A preliminary certification experiment compares the baseline model with the
+model after one wake–nightmare training cycle using the same evaluation
+subset. Alongside the mean and median certified radius, the evaluation also
+reports the certification abstention rate and the number of certified
+samples. These metrics are available in the generated evaluation reports as
+well as the JSON, CSV, and LaTeX export formats.
+
+Certified robustness is intended to complement, rather than replace,
+empirical robustness evaluation. Future work will extend certification to
+additional datasets, larger models, and multi-cycle NightmareNet training.
+
+Certification experiment artifacts are stored in the
+`results/certification/` directory, including per-sample certification
+results, aggregated metrics, and a summary report to support
+reproducibility and further analysis.
+
+### 6.3 Limitations
 
 This is an early-stage validation; we explicitly note:
 
@@ -388,10 +416,17 @@ This is an early-stage validation; we explicitly note:
 6. **No human evaluation of dream / nightmare quality.** Our distortions may
    over- or under-preserve semantics relative to TextFooler — we plan a small
    crowd-sourced rating study.
-7. **No formal robustness certification.** All numbers are empirical; we make
-   no claims about certified robustness (cf. randomized smoothing, IBP).
+7. **Formal robustness certification is now partially supported.** NightmareNet
+   now includes randomized smoothing–based certification through the
+   `evaluation.certification` configuration, providing certified robustness
+   metrics such as certified radius and certification abstention rate. These
+   formal guarantees complement the empirical adversarial robustness metrics
+   reported throughout this work. However, certification has currently been
+   evaluated only on a limited set of experiments, and broader evaluation
+   across additional datasets, models, and multiple training cycles remains
+   future work.
 
-### 6.3 Broader impact
+### 6.4 Broader impact
 
 *Positive:* The +13.64% headline result on a consumer GPU suggests that
 practical adversarial-robustness gains do not require industrial compute,
@@ -406,7 +441,7 @@ shipping the engines as training utilities, not standalone generators, (b)
 documenting the risk in `docs/SECURITY.md`, and (c) gating the API behind
 rate limiting in the hosted platform.
 
-### 6.4 Threats to validity
+### 6.5 Threats to validity
 
 - **Internal validity.** Single-seed results are vulnerable to seed cherry-
   picking; we publish the raw JSON output and the exact reproduction command
