@@ -57,8 +57,8 @@ def compute_stats(values: list[float]) -> tuple[float, float, float]:
     mean = sum(values) / n
     variance = sum((x - mean) ** 2 for x in values) / (n - 1)
     std = math.sqrt(variance)
-    # Student-t critical value for df=4 (N=5) at 95% confidence is 2.776
-    t_crit = 2.776
+    from scipy.stats import t as t_dist
+    t_crit = t_dist.ppf(0.975, df=n - 1)
     ci = t_crit * (std / math.sqrt(n))
     return mean, std, ci
 
@@ -148,7 +148,7 @@ def update_paper_draft(summary: dict) -> None:
     content = content.replace(
         "+4.0 and +7.95 absolute percentage points respectively",
         (
-            f"+{clean_delta_pct:.1f} and +{dist_delta_pct:.2f} "
+            f"{clean_delta_pct:+.1f} and {dist_delta_pct:+.2f} "
             "absolute percentage points respectively"
         )
     )

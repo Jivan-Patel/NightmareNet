@@ -314,7 +314,7 @@ decreases slightly (0.1353 → 0.1351) and the relative robustness improvement
 NightmareNet wins at every strength level for both distortion families.
 Critically, improvement *increases with distortion strength* — adversarial
 training is most valuable exactly where baselines collapse (strength 0.7–0.9).
-The gain on the hardest condition (nightmare @ s = 0.9) is +15.5 absolute
+The gain on the hardest condition (nightmare @ s = 0.9) is +4.2 absolute
 percentage points.
 
 ### 5.3 Training cost
@@ -324,7 +324,7 @@ percentage points.
 | Baseline | 4.1 s | 1 | 0 |
 | NightmareNet (wake + nightmare, full distortion) | 483.6 s | 2 | 1 (partial) |
 
-The +13.64% robustness gain comes with a heavier compute cost in this
+The +11.84% robustness gain comes with a heavier compute cost in this
 configuration because the nightmare epoch now invokes the full distortion
 chain (rule-based + learned-attention). The cached `LearnedAdversarialGenerator`
 amortizes most of the model-load cost; runtime is dominated by per-example
