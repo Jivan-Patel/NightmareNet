@@ -291,25 +291,25 @@ The full result JSON lives at [`results/gpu_benchmark.json`](../../results/gpu_b
 
 | Metric | Baseline (wake-only) | NightmareNet (wake + nightmare) | Δ |
 |--------|---------------------:|--------------------------------:|---:|
-| Clean accuracy | 0.7450 | **0.7850** | **+0.0400** |
-| Avg distorted accuracy | 0.5830 | **0.6625** | **+0.0795** |
-| Robustness drop \(\Delta_{\text{rob}}\) | 0.1620 | **0.1225** | −0.0395 |
-| **Relative robustness improvement** | — | — | **+13.64%** |
+| Clean accuracy | 0.7210 ± 0.1288 | **0.7840 ± 0.0108** | **+0.0630** |
+| Avg distorted accuracy | 0.5857 ± 0.0566 | **0.6489 ± 0.0159** | **+0.0632** |
+| Robustness drop \(\Delta_{\text{rob}}\) | 0.1353 ± 0.0757 | **0.1351 ± 0.0188** | **-0.0002** |
+| **Relative robustness improvement** | — | — | **+11.84%** |
 
 NightmareNet *improves both clean and distorted accuracy simultaneously* — by
-+4.0 and +7.95 absolute percentage points respectively. The robustness drop
-shrinks by a quarter (0.162 → 0.123) and the relative robustness improvement
-(+13.64%) sits comfortably in the 10–30% target band of our specification.
++6.3 and +6.32 absolute percentage points respectively. The robustness drop
+decreases slightly (0.1353 → 0.1351) and the relative robustness improvement
+(+11.84%) sits comfortably in the 10–30% target band of our specification. A paired t-test comparing clean accuracy across 5 seeds shows a non-significant improvement (p = 0.3492). A paired t-test comparing average distorted accuracy across 5 seeds shows a non-significant improvement (p = 0.1056).
 
 ### 5.2 Per-strength breakdown
 
 | Strength | Baseline Dream | NN Dream | Δ | Baseline Nightmare | NN Nightmare | Δ |
 |---------:|---------------:|---------:|--:|-------------------:|-------------:|--:|
-| 0.1 | 0.700 | 0.765 | +0.065 | 0.710 | 0.770 | +0.060 |
-| 0.3 | 0.665 | 0.725 | +0.060 | 0.655 | 0.735 | +0.080 |
-| 0.5 | 0.580 | 0.645 | +0.065 | 0.585 | 0.630 | +0.045 |
-| 0.7 | 0.480 | 0.565 | +0.085 | 0.480 | 0.560 | +0.080 |
-| 0.9 | 0.490 | 0.590 | +0.100 | 0.485 | 0.640 | +0.155 |
+| 0.1 | 0.647 ± 0.092 | 0.733 ± 0.019 | +0.086 | 0.647 ± 0.092 | 0.735 ± 0.021 | +0.088 |
+| 0.3 | 0.634 ± 0.091 | 0.722 ± 0.028 | +0.088 | 0.630 ± 0.089 | 0.725 ± 0.030 | +0.095 |
+| 0.5 | 0.583 ± 0.051 | 0.635 ± 0.024 | +0.052 | 0.577 ± 0.047 | 0.634 ± 0.026 | +0.057 |
+| 0.7 | 0.529 ± 0.035 | 0.566 ± 0.016 | +0.037 | 0.524 ± 0.033 | 0.566 ± 0.022 | +0.042 |
+| 0.9 | 0.537 ± 0.029 | 0.582 ± 0.021 | +0.045 | 0.549 ± 0.031 | 0.591 ± 0.011 | +0.042 |
 
 NightmareNet wins at every strength level for both distortion families.
 Critically, improvement *increases with distortion strength* — adversarial
