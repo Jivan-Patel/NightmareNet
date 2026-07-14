@@ -84,6 +84,9 @@ adaption = [
 ai = [
     "openai>=1.30.0",
 ]
+hub = [
+    "huggingface_hub>=0.20.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/Adit-Jain-srm/NightmareNet"

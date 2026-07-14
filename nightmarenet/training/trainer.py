@@ -25,6 +25,7 @@ from transformers import (
     AutoModelForMaskedLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    get_cosine_schedule_with_warmup,
 )
 
 from nightmarenet.distributed.checkpoint import AtomicCheckpointer
@@ -238,6 +239,7 @@ class Trainer:
 
         # Create scheduler
         self.scheduler = create_scheduler_from_config(config)
+        self.lr_scheduler = None
 
         # Reference model for KL regularization (created after wake phase)
         self.reference_model = None
@@ -344,6 +346,9 @@ class Trainer:
 
         state = {
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "lr_scheduler_state_dict": (
+                self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None
+            ),
             "scaler_state_dict": self.scaler.state_dict() if self.scaler is not None else None,
             "cycle": cycle,
             "phase": phase,
@@ -395,6 +400,10 @@ class Trainer:
         nightmare_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
         on_progress: Optional[Callable[[dict], None]] = None,
+        dream_generator: Optional[Any] = None,
+        nightmare_generator: Optional[Any] = None,
+        dream_base_dataset: Optional[Any] = None,
+        nightmare_base_dataset: Optional[Any] = None,
     ) -> list[dict]:
         """Run the full sleep-cycle training pipeline.
 
@@ -403,6 +412,11 @@ class Trainer:
             dream_dataloader: DataLoader for dream phase (mildly distorted).
             nightmare_dataloader: DataLoader for nightmare phase (extreme perturbations).
             val_dataloader: Optional DataLoader for validation.
+            on_progress: Optional progress callback.
+            dream_generator: Optional generator for dream dataset.
+            nightmare_generator: Optional generator for nightmare dataset.
+            dream_base_dataset: Optional base dataset for dream.
+            nightmare_base_dataset: Optional base dataset for nightmare.
 
         Returns:
             List of phase result dicts (training history).
@@ -419,15 +433,56 @@ class Trainer:
         # Native distributed logic is applied per-phase via apply_phase_strategy
 
         warmup_steps = self.training_config.get("warmup_steps", 0)
+        lr_schedule = self.training_config.get("lr_schedule", "none")
 
-        lr_scheduler = None
+        def get_dataloader_steps(dataloader, default_steps=1000):
+            try:
+                return len(dataloader)
+            except (TypeError, AttributeError):
+                return default_steps
 
-        if warmup_steps > 0:
+        self.lr_scheduler = None
 
+        if lr_schedule == "linear_warmup_cosine":
+            grad_accum = self.training_config.get("gradient_accumulation_steps", 1)
+            steps_per_epoch_train = get_dataloader_steps(train_dataloader)
+            steps_per_epoch_dream = get_dataloader_steps(dream_dataloader)
+            steps_per_epoch_nightmare = get_dataloader_steps(nightmare_dataloader)
+
+            wake_epochs = self.training_config.get("wake_epochs", 3)
+            dream_epochs = self.training_config.get("dream_epochs", 2)
+            nightmare_epochs = self.training_config.get("nightmare_epochs", 1)
+            num_cycles = self.training_config.get("num_cycles", 3)
+
+            finetune_after_prune = self.compression_config.get("finetune_after_prune", True)
+            finetune_epochs = (
+                self.compression_config.get("finetune_epochs", 1)
+                if finetune_after_prune
+                else 0
+            )
+
+            def get_opt_steps(steps, accum):
+                return max(1, steps // accum)
+
+            wake_steps = get_opt_steps(steps_per_epoch_train, grad_accum) * wake_epochs
+            dream_steps = get_opt_steps(steps_per_epoch_dream, grad_accum) * dream_epochs
+            nightmare_steps = (
+                get_opt_steps(steps_per_epoch_nightmare, grad_accum) * nightmare_epochs
+            )
+            compress_steps = get_opt_steps(steps_per_epoch_train, grad_accum) * finetune_epochs
+
+            total_steps = num_cycles * (wake_steps + dream_steps + nightmare_steps + compress_steps)
+
+            self.lr_scheduler = get_cosine_schedule_with_warmup(
+                self.optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+        elif lr_schedule != "none" and warmup_steps > 0:
             def warmup_lambda(current_step):
                 return min(1.0, current_step / warmup_steps)
 
-            lr_scheduler = LambdaLR(
+            self.lr_scheduler = LambdaLR(
                 self.optimizer,
                 lr_lambda=warmup_lambda,
             )
@@ -488,6 +543,17 @@ class Trainer:
                             except Exception as opt_err:
                                 logger.warning("Failed to load optimizer state dict: %s", opt_err)
 
+                    has_sched_state = state.get("lr_scheduler_state_dict") is not None
+                    if self.lr_scheduler is not None and has_sched_state:
+                        try:
+                            self.lr_scheduler.load_state_dict(state["lr_scheduler_state_dict"])
+                            logger.info("Resumed learning rate scheduler state.")
+                        except Exception as lr_err:
+                            logger.warning(
+                                "Failed to load learning rate scheduler state dict: %s",
+                                lr_err,
+                            )
+
                     if self.scaler is not None and state.get("scaler_state_dict") is not None:
                         try:
                             self.scaler.load_state_dict(state["scaler_state_dict"])
@@ -533,11 +599,69 @@ class Trainer:
                     state_path,
                 )
 
+        last_cycle_for_strength = -1
         try:
             for cycle, phase, num_epochs in self.scheduler:
                 if cycle < getattr(self, "_start_cycle", 0):
                     logger.info(f"Skipping cycle {cycle} (resuming from {self._start_cycle})")
                     continue
+
+                if cycle != last_cycle_for_strength:
+                    last_cycle_for_strength = cycle
+                    if self.config.get("distortion", {}).get("schedule_across_cycles", False):
+                        num_cycles = self.training_config.get("num_cycles", 3)
+                        distortion_config = self.config.get("distortion", {})
+                        strength_min = distortion_config.get("strength_min", 0.2)
+                        strength_max = distortion_config.get("strength_max", 0.9)
+
+                        if num_cycles > 1:
+                            diff = strength_max - strength_min
+                            cycle_strength = strength_min + diff * cycle / (num_cycles - 1)
+                        else:
+                            cycle_strength = strength_max
+
+                        logger.info(
+                            "Cycle %d: Scheduled distortion strength = %.4f",
+                            cycle + 1,
+                            cycle_strength,
+                        )
+
+                        if dream_generator is not None:
+                            dream_generator.strength = cycle_strength
+                        if nightmare_generator is not None:
+                            nightmare_generator.strength = cycle_strength
+
+                        text_column = self.config.get("dataset", {}).get("text_column", "text")
+                        max_length = self.config.get("model", {}).get("max_length", 128)
+                        batch_size = self.training_config.get("batch_size", 8)
+
+                        if dream_generator is not None and dream_base_dataset is not None:
+                            logger.info(
+                                "Regenerating dream dataset with strength %.4f",
+                                cycle_strength,
+                            )
+                            dream_data = dream_generator.generate(dream_base_dataset)
+                            dream_dataloader = _tokenize_dataset(
+                                dream_data,
+                                self.tokenizer,
+                                text_column,
+                                max_length,
+                                batch_size,
+                            )
+
+                        if nightmare_generator is not None and nightmare_base_dataset is not None:
+                            logger.info(
+                                "Regenerating nightmare dataset with strength %.4f",
+                                cycle_strength,
+                            )
+                            nightmare_data = nightmare_generator.generate(nightmare_base_dataset)
+                            nightmare_dataloader = _tokenize_dataset(
+                                nightmare_data,
+                                self.tokenizer,
+                                text_column,
+                                max_length,
+                                batch_size,
+                            )
 
                 if cycle == getattr(self, "_start_cycle", 0):
                     start_phase = getattr(self, "_start_phase", None)
@@ -613,7 +737,7 @@ class Trainer:
                         device=self.device,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
-                        lr_scheduler=lr_scheduler,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = wake_runner.run(train_dataloader, num_epochs=num_epochs)
 
@@ -633,7 +757,7 @@ class Trainer:
                         kl_weight=0.1,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
-                        lr_scheduler=lr_scheduler,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = dream_runner.run(dream_dataloader, num_epochs=num_epochs)
 
@@ -647,7 +771,7 @@ class Trainer:
                         lr_multiplier=lr_multiplier,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
-                        lr_scheduler=lr_scheduler,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = nightmare_runner.run(nightmare_dataloader, num_epochs=num_epochs)
 
@@ -658,6 +782,7 @@ class Trainer:
                         device=self.device,
                         scaler=self.scaler,
                         callback_manager=self.callback_manager,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = compress_runner.run(
                         dataloader=train_dataloader,

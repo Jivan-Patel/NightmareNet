@@ -545,6 +545,11 @@ class Pipeline:
                     self._nightmare_base if self._nightmare_base is not None else self._dataset
                 )
 
+                self._dream_generator = dream_gen
+                self._nightmare_generator = nightmare_gen
+                self._dream_base_dataset = dream_base
+                self._nightmare_base_dataset = nightmare_base
+
                 dream_data = dream_gen.generate(dream_base)
                 nightmare_data = nightmare_gen.generate(nightmare_base)
 
@@ -657,6 +662,10 @@ class Pipeline:
                     nightmare_dataloader=self._nightmare_dl,
                     val_dataloader=self._val_dl,
                     on_progress=_on_train_progress,
+                    dream_generator=getattr(self, "_dream_generator", None),
+                    nightmare_generator=getattr(self, "_nightmare_generator", None),
+                    dream_base_dataset=getattr(self, "_dream_base_dataset", None),
+                    nightmare_base_dataset=getattr(self, "_nightmare_base_dataset", None),
                 )
 
                 # Update metrics from history
@@ -818,6 +827,42 @@ class Pipeline:
                         {"model": self.config.get("model", {}).get("name", "unknown")},
                     )
 
+                # ── Automated HuggingFace Hub Push Gating ──────────────────
+                tracking_cfg = self.config.get("tracking", {})
+                auto_push_repo = tracking_cfg.get("auto_push_hub")
+                if auto_push_repo:
+                    import os
+                    import tempfile
+
+                    import yaml
+
+                    from nightmarenet.hub.core import push_model
+
+                    logger.info("Pushing to Hub...")
+                    try:
+                        with tempfile.TemporaryDirectory() as tmp_dir:
+                            self.export(tmp_dir)
+
+                            # Extract metadata from comparison results and configuration
+                            pipeline_metadata = {
+                                "robustness_score": float(comparison.get("robustness_score", 0.0)),
+                                "training_config": self.config
+                            }
+
+                            # Save the metadata temporarily inside the exported directory
+                            metadata_file_path = os.path.join(tmp_dir, "hub_metadata.yaml")
+                            with open(metadata_file_path, "w", encoding="utf-8") as f:
+                                yaml.safe_dump(pipeline_metadata, f)
+
+                            # Pass the generated metadata file to push_model
+                            push_model(
+                                model_dir=tmp_dir,
+                                repo_id=auto_push_repo,
+                                metadata_path=metadata_file_path
+                            )
+                    except Exception as upload_err:
+                        logger.error("Push failed: %s", upload_err)
+
                 return comparison
             except Exception as exc:
                 self._fail(f"Evaluation failed: {exc}")
@@ -911,6 +956,7 @@ class Pipeline:
             hf_dataset=hf_dataset,
             hf_subset=hf_subset,
         )
+
         self.optimize()
         self.prepare()
         self.train()
@@ -920,7 +966,6 @@ class Pipeline:
             self.export(export_dir)
 
         return comparison
-
 
 def create_pipeline_from_config(
     config_path: str = "configs/default.yaml",

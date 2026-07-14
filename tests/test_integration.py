@@ -186,7 +186,7 @@ class TestFullCycleIntegration:
             ("wake", 1), ("dream", 1), ("nightmare", 1), ("compress", 1)
         ]
 
-    def test_trainer_loop_reproducibility(self):
+    def test_trainer_loop_reproducibility(self, tmp_path):
         """Verify that two independent trainer runs with identical seeds
         produce identical losses.
         """
@@ -210,7 +210,10 @@ class TestFullCycleIntegration:
                 "learning_rate": 1e-4,
                 "max_grad_norm": 1.0,
                 "gradient_accumulation_steps": 1,
-            }
+                "save_every_phase": False,
+                "checkpoint_dir": str(tmp_path / "ckpt"),
+                "log_dir": str(tmp_path / "logs"),
+            },
         }
 
         # --- RUN 1 ---

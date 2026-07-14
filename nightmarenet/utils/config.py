@@ -58,7 +58,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "dream_strength": 0.25,
         "nightmare_strength": 0.8,
         "strength_schedule": "uniform",
-        "strength_min": 0.3,
+        "schedule_across_cycles": False,
+        "strength_min": 0.2,
         "strength_max": 0.9,
         "text": {
             "char_swap": 0.3,
@@ -140,6 +141,7 @@ _SCHEMA: dict[str, tuple] = {
     "distortion.dream_strength": (float, 0.0, 1.0, True),
     "distortion.nightmare_strength": (float, 0.0, 1.0, True),
     "distortion.strength_schedule": (str, None, None, False),
+    "distortion.schedule_across_cycles": (bool, None, None, False),
     "distortion.strength_min": (float, 0.0, 1.0, False),
     "distortion.strength_max": (float, 0.0, 1.0, False),
     "compression.pruning_ratio": (float, 0.0, _MAX_PRUNING_RATIO, True),
