@@ -274,6 +274,38 @@ cd frontend && npm install && npm run dev    # http://localhost:3000
 
 ---
 
+## EU AI Act Compliance Reports
+
+NightmareNet can automatically generate compliance reports aligned with **EU AI Act Article 15** after a pipeline run.
+
+Enable the feature in your configuration:
+
+```yaml
+tracking:
+  compliance_report: true
+```
+
+When enabled, NightmareNet generates both:
+
+- JSON compliance report (machine-readable)
+- Markdown compliance report (human-readable)
+
+Each report includes:
+
+- Training lineage
+- Dataset and model metadata
+- Configuration SHA-256 hash
+- Model SHA-256 hash
+- Robustness metrics
+- Runtime environment
+- EU AI Act Article 15 mapping
+- NIST AI RMF mapping
+
+The API also exposes generated reports:
+
+- `GET /api/v1/compliance/report/{run_id}`
+- `GET /api/v1/compliance/reports`
+
 ## CLI Reference
 
 Four top-level commands cover the full workflow.

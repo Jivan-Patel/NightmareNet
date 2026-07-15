@@ -8,6 +8,7 @@ Usage:
     uvicorn nightmarenet.api.app:app --host 0.0.0.0 --port 8000
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -1146,3 +1147,33 @@ async def websocket_pipeline_progress(websocket: WebSocket, run_id: str):
         except Exception:
             pass
 
+@app.get("/api/v1/compliance/report/{run_id}", tags=["Compliance"])
+async def get_compliance_report(run_id: str):
+    """Return a generated compliance report."""
+
+    report_path = Path("results") / f"{run_id}_compliance_report.json"
+
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Compliance report not found.",
+        )
+
+    return json.loads(report_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/v1/compliance/reports", tags=["Compliance"])
+async def list_compliance_reports():
+    """List available compliance reports."""
+
+    reports = []
+
+    for report in Path("results").glob("*_compliance_report.json"):
+        reports.append(
+            {
+                "run_id": report.stem.replace("_compliance_report", ""),
+                "file": report.name,
+            }
+        )
+
+    return reports

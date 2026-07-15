@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from nightmarenet.compliance.report import generate_report
 from nightmarenet.data.generator import create_generators_from_config
 from nightmarenet.data.ingest import DataIngestor
 from nightmarenet.distortions.text import apply_text_distortions
@@ -23,6 +24,7 @@ from nightmarenet.training.callbacks import CallbackManager, TrainingEvent
 from nightmarenet.training.trainer import Trainer, _tokenize_dataset
 from nightmarenet.utils.config import load_config
 from nightmarenet.utils.telemetry import record_metric, setup_telemetry, trace_phase
+from nightmarenet.utils.tracking import create_tracker_from_config
 from nightmarenet.utils.webhooks import trigger_webhook
 
 logger = logging.getLogger(__name__)
@@ -118,6 +120,9 @@ class Pipeline:
 
         # Initialise OTel tracing + metrics (no-op if endpoint not configured)
         setup_telemetry(config)
+
+        self.tracker = create_tracker_from_config(config)
+        self.tracker.log_config(config)
 
         # Populated by each stage
         self._dataset = None
@@ -668,6 +673,15 @@ class Pipeline:
                     nightmare_base_dataset=getattr(self, "_nightmare_base_dataset", None),
                 )
 
+                # Log training lineage for compliance reporting
+                if history:
+                    for record in history:
+                        self.tracker.log_phase(
+                            cycle=record.get("cycle", 0),
+                            phase=record.get("phase", "unknown"),
+                            metrics=record,
+                        )
+
                 # Update metrics from history
                 self.metrics.history = history
                 if history:
@@ -766,6 +780,31 @@ class Pipeline:
                     "comparison": comparison,
                 }
                 evaluator.save_results(results_dict)
+
+                # ---------------------------------------------------------
+                # Generate EU AI Act Article 15 compliance report
+                # ---------------------------------------------------------
+                tracking_cfg = self.config.get("tracking", {})
+
+                if tracking_cfg.get("compliance_report", False):
+                    output_dir = tracking_cfg.get("output_dir", "results")
+
+                    model_path = ""
+                    training_cfg = self.config.get("training", {})
+                    checkpoint_dir = training_cfg.get("checkpoint_dir")
+
+                    if checkpoint_dir:
+                        model_path = checkpoint_dir
+
+                    generate_report(
+                        config=self.config,
+                        comparison=comparison,
+                        model_path=model_path,
+                        output_dir=output_dir,
+                        tracker=self.tracker,
+                    )
+
+                    logger.info("Compliance report generated.")
 
                 self.metrics.progress_pct = 100.0
                 self.metrics.current_phase = "complete"

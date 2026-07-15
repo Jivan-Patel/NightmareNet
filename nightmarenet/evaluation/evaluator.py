@@ -406,6 +406,18 @@ class Evaluator:
 
             comparison["metrics"][metric_name] = metric_comparison
 
+                # Backward-compatible top-level robustness summary.
+        robustness = comparison["metrics"].get("robustness")
+        if robustness:
+            trained_auc = (robustness.get("trained", {}).get("auc_robustness"))
+            delta_auc = (robustness.get("deltas", {}).get("auc_robustness"))
+
+            if trained_auc is not None:
+                comparison["robustness_score"] = trained_auc
+
+            if delta_auc is not None:
+                comparison["robustness_delta"] = delta_auc
+
         return comparison
 
     def save_results(self, results: dict, filename: str = "evaluation_results.json") -> None:

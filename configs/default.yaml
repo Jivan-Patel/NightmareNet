@@ -116,6 +116,9 @@ tracking:
   log_dir: logs/runs
   output_dir: "results"
   output_format: "json"  # "json" or "markdown"
+
+  # Generate EU AI Act Article 15 compliance reports
+  compliance_report: false
   # Optional: Automatically push the best hardened model checkpoint to HuggingFace Hub
   # upon successful completion of the full Wake/Dream/Nightmare/Compress pipeline cycle.
   # Leave blank or omit to disable auto-push.
