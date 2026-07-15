@@ -199,18 +199,25 @@ pip install -e ".[dev,api]"
 
 The `dev` extra brings in `pytest`, `ruff`, `mypy`, and the test fixtures. The `api` extra brings in `fastapi`, `uvicorn`, and `slowapi` for the FastAPI service.
 
-### Pre-commit hooks (recommended)
+### Pre-commit hooks (optional)
+
+There is no `.pre-commit-config.yaml` committed yet. If you want pre-commit locally:
 
 ```bash
 pip install pre-commit
+cat > .pre-commit-config.yaml << 'EOF'
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+EOF
 pre-commit install
 ```
 
-This runs `ruff` and a small set of fast checks on every commit. To run on the whole repo at once:
-
-```bash
-pre-commit run --all-files
-```
+Or simply run `make lint` before committing.
 
 ### Verify the environment
 
@@ -241,7 +248,7 @@ make all
 ### Start the API for ad-hoc testing
 
 ```bash
-uvicorn nightmarenet.api.app:app --reload --port 8000
+uvicorn nightmarenet.api.app:app --reload --port 8000 --env-file .env
 ```
 
 Hit `http://127.0.0.1:8000/api/v1/health` to confirm.
@@ -255,8 +262,8 @@ NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint w
 | Package | Purpose | Allowed dependencies |
 |---------|---------|---------------------|
 | `nightmarenet/` | OSS core: distortions, training loop, evaluation, CLI, FastAPI inference endpoints | `torch`, `transformers`, `pydantic`, `fastapi`, `pyyaml`, `slowapi` (optional) |
-| `nightmarenet_server/` *(future)* | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
-| `frontend/` | Next.js 14 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
+| `nightmarenet_server/` | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
+| `frontend/` | Next.js 16 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
 
 > [!IMPORTANT]
 > The OSS core **must not** import anything from `nightmarenet_server`, and **must not** depend on PostgreSQL, Redis, Celery, OAuth providers, or any hosted-only library. If your change touches both, propose the boundary explicitly in the PR description and split the patches.
@@ -281,7 +288,7 @@ NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint w
 
 ## Adding a new distortion
 
-Distortions are first-class plugins. The full walkthrough is in [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
+Distortions are first-class plugins. The full walkthrough is in [`docs/plugin_development.md`](docs/plugin_development.md) and [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
 
 ### The signature
 
@@ -374,7 +381,7 @@ Mirror the package layout under `tests/`. At minimum:
 
 All PRs that change user-facing behavior **must** update relevant documentation:
 
-- **API changes** → Update `docs/api/` OpenAPI spec and relevant endpoint docs
+- **API changes** → Run server and check [auto-generated docs](http://localhost:8000/docs); update relevant endpoint descriptions in code
 - **New features** → Add to `README.md` feature table + relevant section
 - **Config changes** → Update `configs/default.yaml` comments + `CLAUDE.md` if applicable
 - **Distortion changes** → Update the README distortion table + `docs/research/paper-draft.md`
