@@ -99,9 +99,8 @@ jobs:
             --progress-spinner=off \
             --format json \
             --output pip-audit-report.json \
-            --exit-zero \
             || true
-          pip-audit --progress-spinner=off || true
+          pip-audit --progress-spinner=off
 
       - name: Upload security reports
         if: always()

@@ -1,6 +1,6 @@
 """Pydantic models for API request/response schemas."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -384,4 +384,5 @@ class SettingsWebhooksRequest(BaseModel):
 class WebhookTestResponse(BaseModel):
     """Response for testing webhooks, preserving legacy contract."""
 
-    status: str = Field(default="ok")
+    status: Literal["ok"]
+    
