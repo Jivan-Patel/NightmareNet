@@ -46,6 +46,7 @@ try:
         DistortionRequest,
         DistortionResponse,
         ErrorResponse,
+        GenericPipelineResponse,
         HealthResponse,
         PipelineCreateRequest,
         PipelineReportResponse,
@@ -1019,6 +1020,7 @@ _TEST_WEBHOOK_BODY = Body(...)
 
 @app.post(
     "/api/v1/notifications/test-webhook",
+    response_model=GenericPipelineResponse,
     responses={
         400: {"model": ErrorResponse},
         422: {"model": ErrorResponse},
@@ -1092,7 +1094,7 @@ async def test_webhook_endpoint(
             f"Test notification: {body.event_type} integration test.",
             details,
         )
-        return {"status": "ok"}
+        return GenericPipelineResponse(success=True, message="Webhook test dispatched successfully")
     except Exception as e:
         logger.exception("Test webhook failed: %s", e)
         raise HTTPException(
@@ -1145,4 +1147,4 @@ async def websocket_pipeline_progress(websocket: WebSocket, run_id: str):
             await websocket.close(code=1011)
         except Exception:
             pass
-
+        

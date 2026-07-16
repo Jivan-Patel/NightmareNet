@@ -352,3 +352,39 @@ class TestWebhookRequest(BaseModel):
         description="Event type to test: run_complete, regression_detected, alert, deploy",
     )
 
+
+class PipelineTrainRequest(BaseModel):
+    """Request body for training a pipeline."""
+
+    config: dict[str, Any] = Field(..., description="Training config")
+    model_name: str = Field(default="gpt2", description="Model to train")
+    cycles: int = Field(default=1, ge=1, le=100)
+
+
+class PipelineEvaluateRequest(BaseModel):
+    """Request body for evaluating a pipeline."""
+
+    config: dict[str, Any] = Field(..., description="Evaluation config")
+    model_name: str = Field(default="gpt2", description="Model to evaluate")
+
+
+class PipelineCancelRequest(BaseModel):
+    """Request body for cancelling a pipeline run."""
+
+    pipeline_id: str = Field(..., description="ID of the pipeline to cancel")
+    force: bool = Field(default=False, description="Force cancellation")
+
+
+class SettingsWebhooksRequest(BaseModel):
+    """Request body for updating webhook settings."""
+
+    webhooks: list[dict[str, Any]] = Field(..., description="List of webhook configurations")
+
+
+class GenericPipelineResponse(BaseModel):
+    """Generic response for pipeline operations."""
+
+    success: bool = Field(..., description="Indicates if the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[dict[str, Any]] = Field(default=None, description="Additional response data")
+    
