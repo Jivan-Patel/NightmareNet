@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +41,11 @@ class ExperimentTracker:
 
         self.run_id = str(uuid.uuid4())
 
-        self.lineage = {
-             "run_id": self.run_id,
-             "created_at": datetime.now(timezone.utc).isoformat(),
-             "config": {},
-             "phases": [],
+        self.lineage: dict[str, Any] = {
+            "run_id": self.run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "config": {},
+            "phases": [],
         }
 
         if self.backend == "wandb":
@@ -119,14 +119,12 @@ class ExperimentTracker:
         prefixed = {f"{phase}/{k}": v for k, v in metrics.items() if isinstance(v, (int, float))}
         prefixed["cycle"] = cycle
 
-        cast(list[dict[str, Any]], self.lineage["phases"]).append(
-            {
-        "cycle": cycle,
-        "phase": phase,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "metrics": metrics,
-            }
-        )
+        self.lineage["phases"].append({
+            "cycle": cycle,
+            "phase": phase,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metrics": metrics,
+        })
 
         self.log_metrics(prefixed)
 
