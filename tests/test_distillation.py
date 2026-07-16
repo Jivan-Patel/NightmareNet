@@ -7,17 +7,20 @@ from unittest.mock import patch
 import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM
 
 
 @pytest.fixture
 def tiny_model():
     """Create a small GPT2 model from config (no download)."""
-    config = AutoConfig.from_pretrained("gpt2")
-    config.n_layer = 2
-    config.n_head = 2
-    config.n_embd = 64
-    config.vocab_size = 100
+    from transformers import GPT2Config
+
+    config = GPT2Config(
+        n_layer=2,
+        n_head=2,
+        n_embd=64,
+        vocab_size=100
+    )
     model = AutoModelForCausalLM.from_config(config)
     return model
 
