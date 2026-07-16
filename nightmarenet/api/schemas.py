@@ -385,4 +385,3 @@ class WebhookTestResponse(BaseModel):
     """Response for testing webhooks, preserving legacy contract."""
 
     status: Literal["ok"]
-    
