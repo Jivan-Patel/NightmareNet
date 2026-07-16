@@ -7,7 +7,7 @@ import json
 import os
 import platform
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -97,8 +97,24 @@ def _build_report(
     config_hash = _config_hash(config)
 
     model_hash = None
-    if model_path and os.path.exists(model_path):
-        model_hash = _sha256_file(model_path)
+
+    if model_path:
+        model_path_obj = Path(model_path)
+
+        if model_path_obj.is_file():
+            model_hash = _sha256_file(str(model_path_obj))
+
+        elif model_path_obj.is_dir():
+            for filename in (
+                "model.safetensors",
+                "pytorch_model.bin",
+                "model.pt",
+                "checkpoint.pt",
+            ):
+                candidate = model_path_obj / filename
+                if candidate.exists():
+                    model_hash = _sha256_file(str(candidate))
+                    break
 
     lineage = {}
     if tracker is not None:
@@ -112,16 +128,18 @@ def _build_report(
 
     robustness_metrics = comparison.get("metrics", {}).get("robustness", {})
 
+    trained = robustness_metrics.get("trained", {})
+    deltas = robustness_metrics.get("deltas", {})
+
     robustness = {
-        "clean_accuracy": robustness_metrics.get("clean_accuracy"),
-        "distorted_accuracy": robustness_metrics.get("distorted_accuracy"),
-        "auc_robustness": robustness_metrics.get("auc_robustness"),
-        "delta": comparison.get("robustness_delta"),
-        "details": robustness_metrics,
+        "clean_accuracy": trained.get("clean_accuracy"),
+        "distorted_accuracy": trained.get("distorted_accuracy"),
+        "auc_robustness": trained.get("auc_robustness"),
+        "delta": deltas.get("auc_robustness"),
     }
 
     report = {
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "schema_version": "1.0",
         "model": {
            "name": model_config.get("name"),

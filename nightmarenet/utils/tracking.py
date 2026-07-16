@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class ExperimentTracker:
 
         self.lineage = {
              "run_id": self.run_id,
-             "created_at": datetime.utcnow().isoformat(),
+             "created_at": datetime.now(timezone.utc).isoformat(),
              "config": {},
              "phases": [],
         }
@@ -119,12 +119,12 @@ class ExperimentTracker:
         prefixed = {f"{phase}/{k}": v for k, v in metrics.items() if isinstance(v, (int, float))}
         prefixed["cycle"] = cycle
 
-        self.lineage["phases"].append(
+        cast(list[dict[str, Any]], self.lineage["phases"]).append(
             {
-                "cycle": cycle,
-                "phase": phase,
-                "timestamp": datetime.utcnow().isoformat(),
-                "metrics": metrics,
+        "cycle": cycle,
+        "phase": phase,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metrics": metrics,
             }
         )
 

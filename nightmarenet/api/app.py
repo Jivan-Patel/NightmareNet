@@ -1148,10 +1148,19 @@ async def websocket_pipeline_progress(websocket: WebSocket, run_id: str):
             pass
 
 @app.get("/api/v1/compliance/report/{run_id}", tags=["Compliance"])
-async def get_compliance_report(run_id: str):
+def get_compliance_report(run_id: str):
     """Return a generated compliance report."""
 
-    report_path = Path("results") / f"{run_id}_compliance_report.json"
+    results_dir = Path("results").resolve()
+    report_path = (results_dir / f"{run_id}_compliance_report.json").resolve()
+
+    try:
+        report_path.relative_to(results_dir)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid run id.",
+        ) from err
 
     if not report_path.exists():
         raise HTTPException(
@@ -1161,9 +1170,8 @@ async def get_compliance_report(run_id: str):
 
     return json.loads(report_path.read_text(encoding="utf-8"))
 
-
 @app.get("/api/v1/compliance/reports", tags=["Compliance"])
-async def list_compliance_reports():
+def list_compliance_reports():
     """List available compliance reports."""
 
     reports = []

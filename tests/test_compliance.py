@@ -70,4 +70,3 @@ def test_config_defaults_to_no_compliance_report():
     }
 
     assert config["tracking"]["compliance_report"] is False
-    
