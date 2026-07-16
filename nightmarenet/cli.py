@@ -162,6 +162,12 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         print(f"  Output: {args.output if args.output else './results'}")
         print()
 
+        try:
+            orchestrator = EnsembleOrchestrator(args.config)
+            results = orchestrator.run(timeout_seconds=300)
+        except (FileNotFoundError, OSError) as e:
+            print(f"Error: could not load benchmark config: {e}", file=sys.stderr)
+            return 1
         output_dir = args.output if args.output else "./results"
         no_cache = getattr(args, "no_cache", False)
 
@@ -176,13 +182,13 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         curves = calculate_degradation_curves(results["raw_results"])
         results["degradation_curves"] = curves
 
+        output_dir = args.output if args.output else "./results"
         # We want json, csv, latex
         # format_all reads 'models_summary' from results dict for table generation
         format_all(results, formats=["json", "csv", "latex"], output_dir=output_dir)
         print(f"\nResults saved to {output_dir}")
 
         return 0
-
     import yaml
 
     from nightmarenet.evaluation.evaluator import Evaluator
