@@ -18,12 +18,14 @@ from typing import Any, Callable, Optional
 import torch
 import torch.distributed as dist
 from datasets import IterableDataset
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForMaskedLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    get_cosine_schedule_with_warmup,
 )
 
 from nightmarenet.distributed.checkpoint import AtomicCheckpointer
@@ -31,6 +33,11 @@ from nightmarenet.distributed.ddp_wrapper import DDPWrapper
 from nightmarenet.distributed.device_pool import DevicePool
 from nightmarenet.distributed.resume import ResumeManager
 from nightmarenet.distributed.strategies import apply_phase_strategy
+from nightmarenet.training.callbacks import (
+    CallbackManager,
+    EventType,
+    TrainingEvent,
+)
 from nightmarenet.training.phases import (
     CompressionPhase,
     DreamPhase,
@@ -65,6 +72,16 @@ def _create_amp_scaler(use_amp: bool, device: torch.device) -> Optional[torch.am
     return None
 
 
+def _worker_init_fn(worker_id: int) -> None:
+    """Ensure numpy and Python random are seeded correctly inside DataLoader workers."""
+    import random
+
+    import numpy as np
+    worker_seed = (torch.initial_seed() + worker_id) % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 def _tokenize_dataset(
     dataset: Any,
     tokenizer: Any,
@@ -90,7 +107,11 @@ def _tokenize_dataset(
             remove_columns=dataset.column_names if dataset.column_names else [text_column],
         )
         tokenized = tokenized.with_format("torch")
-        return DataLoader(tokenized, batch_size=batch_size)
+        return DataLoader(
+            tokenized,
+            batch_size=batch_size,
+            worker_init_fn=_worker_init_fn
+        )
 
     tokenized = dataset.map(
         tokenize_fn,
@@ -99,7 +120,30 @@ def _tokenize_dataset(
         desc="Tokenizing",
     )
     tokenized.set_format("torch")
-    return DataLoader(tokenized, batch_size=batch_size, shuffle=True)
+    return DataLoader(
+        tokenized,
+        batch_size=batch_size,
+        shuffle=True,
+        worker_init_fn=_worker_init_fn
+    )
+
+
+def _set_reproducibility(seed: int) -> None:
+    """Set seeds across Python, NumPy, and PyTorch for full reproducibility."""
+    import random
+
+    import numpy as np
+
+    logger.info("Setting reproducibility seed: %d", seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 class Trainer:
@@ -118,6 +162,7 @@ class Trainer:
         tokenizer=None,
         distributed: Optional[str] = None,
         resume_dir: Optional[str] = None,
+        callback_manager: Optional[CallbackManager] = None,
     ):
         self.config = config
         self.device = _get_device(config)
@@ -126,15 +171,19 @@ class Trainer:
         self.compression_config = config.get("compression", {})
 
         # Load model and tokenizer
+        resume_from = self.training_config.get("resume_from")
         model_name = self.model_config.get("name", "gpt2")
         self.model_type = self.model_config.get("type", "causal_lm")
         if model is None:
-            logger.info("Loading model: %s (type=%s)", model_name, self.model_type)
+            logger.info(
+                "Loading model base architecture: %s (type=%s)",
+                model_name,
+                self.model_type,
+            )
             model_cls = _MODEL_TYPE_MAP.get(self.model_type)
             if model_cls is None:
                 raise ValueError(
-                    f"Unknown model type '{self.model_type}'. "
-                    f"Supported: {list(_MODEL_TYPE_MAP)}"
+                    f"Unknown model type '{self.model_type}'. Supported: {list(_MODEL_TYPE_MAP)}"
                 )
             try:
                 kwargs = {}
@@ -147,8 +196,16 @@ class Trainer:
             self.model = model
         self.model.to(self.device)
 
+        # Load weights from checkpoint if resuming
+        if resume_from:
+            from nightmarenet.distributed.checkpoint import load_model_weights
+
+            load_model_weights(self.model, resume_from, self.device)
+
         if tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            has_resume = resume_from and os.path.exists(resume_from)
+            tokenizer_load_path = resume_from if has_resume else model_name
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
@@ -182,6 +239,7 @@ class Trainer:
 
         # Create scheduler
         self.scheduler = create_scheduler_from_config(config)
+        self.lr_scheduler = None
 
         # Reference model for KL regularization (created after wake phase)
         self.reference_model = None
@@ -235,6 +293,7 @@ class Trainer:
 
         self.run_id = None
         self._vram_alert_sent = False
+        self.callback_manager = callback_manager or CallbackManager()
 
     def _create_reference_model(self) -> None:
         """Create a frozen copy of the current model for KL regularization."""
@@ -268,7 +327,7 @@ class Trainer:
         metrics = self.history[-1] if self.history else None
         devices_used = self.device_pool.available_devices if hasattr(self, "device_pool") else []
 
-        self.checkpointer.save(
+        path = self.checkpointer.save(
             run_id=run_id_to_use,
             cycle=cycle,
             phase=phase,
@@ -276,8 +335,56 @@ class Trainer:
             optimizer=self.optimizer,
             config=self.config,
             metrics=metrics,
-            devices_used=devices_used
+            devices_used=devices_used,
         )
+
+        # Save tokenizer
+        self.tokenizer.save_pretrained(path)
+
+        # Save training state
+        import time
+
+        state = {
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "lr_scheduler_state_dict": (
+                self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None
+            ),
+            "scaler_state_dict": self.scaler.state_dict() if self.scaler is not None else None,
+            "cycle": cycle,
+            "phase": phase,
+            "history": self.history,
+            "metadata": {
+                "timestamp": time.time(),
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                "trainer_class": self.__class__.__name__,
+            },
+        }
+        torch.save(state, os.path.join(path, "training_state.pt"))
+        logger.info("Checkpoint saved: %s (including training state)", path)
+
+        # Post-save validation and complete file hashes update
+        meta_path = os.path.join(path, "metadata.json")
+        try:
+            from nightmarenet.distributed.checkpoint import (
+                compute_dir_hashes,
+                validate_checkpoint_integrity,
+            )
+
+            file_hashes = compute_dir_hashes(path)
+            metadata = {}
+            if os.path.exists(meta_path):
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+            metadata["file_hashes"] = file_hashes
+            with open(meta_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            # Post-save validation check
+            validate_checkpoint_integrity(path, self.config)
+            logger.info("Post-save checkpoint integrity validation passed successfully.")
+        except Exception as e:
+            logger.error("Post-save checkpoint integrity validation failed: %s", e)
+            raise
 
     def _save_history(self):
         """Save training history to a JSON file."""
@@ -293,6 +400,10 @@ class Trainer:
         nightmare_dataloader: DataLoader,
         val_dataloader: Optional[DataLoader] = None,
         on_progress: Optional[Callable[[dict], None]] = None,
+        dream_generator: Optional[Any] = None,
+        nightmare_generator: Optional[Any] = None,
+        dream_base_dataset: Optional[Any] = None,
+        nightmare_base_dataset: Optional[Any] = None,
     ) -> list[dict]:
         """Run the full sleep-cycle training pipeline.
 
@@ -301,16 +412,80 @@ class Trainer:
             dream_dataloader: DataLoader for dream phase (mildly distorted).
             nightmare_dataloader: DataLoader for nightmare phase (extreme perturbations).
             val_dataloader: Optional DataLoader for validation.
+            on_progress: Optional progress callback.
+            dream_generator: Optional generator for dream dataset.
+            nightmare_generator: Optional generator for nightmare dataset.
+            dream_base_dataset: Optional base dataset for dream.
+            nightmare_base_dataset: Optional base dataset for nightmare.
 
         Returns:
             List of phase result dicts (training history).
         """
+
+        # Set the reproducibility seed before training starts (Fixes Issue #64)
+        seed = self.config.get("seed", 42)
+        _set_reproducibility(seed)
+
         logger.info("Starting training with schedule:\n%s", self.scheduler.summary())  # type: ignore[union-attr]
         logger.info("Device: %s", self.device)
         self.tracker.log_config(self.config)
 
         # Native distributed logic is applied per-phase via apply_phase_strategy
 
+        warmup_steps = self.training_config.get("warmup_steps", 0)
+        lr_schedule = self.training_config.get("lr_schedule", "none")
+
+        def get_dataloader_steps(dataloader, default_steps=1000):
+            try:
+                return len(dataloader)
+            except (TypeError, AttributeError):
+                return default_steps
+
+        self.lr_scheduler = None
+
+        if lr_schedule == "linear_warmup_cosine":
+            grad_accum = self.training_config.get("gradient_accumulation_steps", 1)
+            steps_per_epoch_train = get_dataloader_steps(train_dataloader)
+            steps_per_epoch_dream = get_dataloader_steps(dream_dataloader)
+            steps_per_epoch_nightmare = get_dataloader_steps(nightmare_dataloader)
+
+            wake_epochs = self.training_config.get("wake_epochs", 3)
+            dream_epochs = self.training_config.get("dream_epochs", 2)
+            nightmare_epochs = self.training_config.get("nightmare_epochs", 1)
+            num_cycles = self.training_config.get("num_cycles", 3)
+
+            finetune_after_prune = self.compression_config.get("finetune_after_prune", True)
+            finetune_epochs = (
+                self.compression_config.get("finetune_epochs", 1)
+                if finetune_after_prune
+                else 0
+            )
+
+            def get_opt_steps(steps, accum):
+                return max(1, steps // accum)
+
+            wake_steps = get_opt_steps(steps_per_epoch_train, grad_accum) * wake_epochs
+            dream_steps = get_opt_steps(steps_per_epoch_dream, grad_accum) * dream_epochs
+            nightmare_steps = (
+                get_opt_steps(steps_per_epoch_nightmare, grad_accum) * nightmare_epochs
+            )
+            compress_steps = get_opt_steps(steps_per_epoch_train, grad_accum) * finetune_epochs
+
+            total_steps = num_cycles * (wake_steps + dream_steps + nightmare_steps + compress_steps)
+
+            self.lr_scheduler = get_cosine_schedule_with_warmup(
+                self.optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+        elif lr_schedule != "none" and warmup_steps > 0:
+            def warmup_lambda(current_step):
+                return min(1.0, current_step / warmup_steps)
+
+            self.lr_scheduler = LambdaLR(
+                self.optimizer,
+                lr_lambda=warmup_lambda,
+            )
         prev_handler = None
         if threading.current_thread() is threading.main_thread():
             prev_handler = signal.getsignal(signal.SIGINT)
@@ -320,11 +495,173 @@ class Trainer:
         current_phase = "init"
         total_phases = max(len(self.scheduler), 1)
         completed_phases = 0
+
+        # Load training state if resuming
+        resume_from = self.training_config.get("resume_from")
+        if resume_from:
+            from nightmarenet.distributed.checkpoint import validate_checkpoint_integrity
+
+            try:
+                # Explicit structural, version and checksum validation of the checkpoint folder
+                validate_checkpoint_integrity(resume_from, self.config)
+            except Exception as val_err:
+                logger.error("Checkpoint integrity validation failed: %s", val_err)
+                raise ValueError(f"Cannot resume from corrupted checkpoint: {val_err}") from val_err
+
+            state_path = os.path.join(resume_from, "training_state.pt")
+            if os.path.exists(state_path):
+                logger.info("Resuming training state from %s", state_path)
+                import copy
+                import pickle
+
+                state = None
+                try:
+                    state = torch.load(state_path, map_location=self.device)
+                except (pickle.PickleError, KeyError, RuntimeError) as e:
+                    logger.error(
+                        "Failed to load training state from %s: %s. Continuing with fresh history.",
+                        state_path,
+                        e,
+                    )
+
+                if state is not None:
+                    # Validate optimizer state dict compatibility
+                    saved_opt = state.get("optimizer_state_dict")
+                    if saved_opt and "param_groups" in saved_opt:
+                        saved_groups = len(saved_opt["param_groups"])
+                        current_groups = len(self.optimizer.param_groups)
+                        if saved_groups != current_groups:
+                            logger.warning(
+                                "Optimizer param group count mismatch (saved: %d, current: %d). "
+                                "Skipping loading optimizer state.",
+                                saved_groups,
+                                current_groups,
+                            )
+                        else:
+                            try:
+                                self.optimizer.load_state_dict(saved_opt)
+                            except Exception as opt_err:
+                                logger.warning("Failed to load optimizer state dict: %s", opt_err)
+
+                    has_sched_state = state.get("lr_scheduler_state_dict") is not None
+                    if self.lr_scheduler is not None and has_sched_state:
+                        try:
+                            self.lr_scheduler.load_state_dict(state["lr_scheduler_state_dict"])
+                            logger.info("Resumed learning rate scheduler state.")
+                        except Exception as lr_err:
+                            logger.warning(
+                                "Failed to load learning rate scheduler state dict: %s",
+                                lr_err,
+                            )
+
+                    if self.scaler is not None and state.get("scaler_state_dict") is not None:
+                        try:
+                            self.scaler.load_state_dict(state["scaler_state_dict"])
+                        except Exception as scaler_err:
+                            logger.warning("Failed to load scaler state dict: %s", scaler_err)
+
+                    self.history = copy.deepcopy(state.get("history", []))
+                    completed_phases = len(self.history)
+
+                    start_cycle = state.get("cycle", 0)
+                    start_phase = state.get("phase")
+
+                    # Validate resume point
+                    valid_phases = ["wake", "dream", "nightmare", "compress"]
+                    if hasattr(self.scheduler, "PHASE_ORDER"):
+                        valid_phases = self.scheduler.PHASE_ORDER
+                    elif hasattr(self.scheduler, "base_scheduler") and hasattr(
+                        self.scheduler.base_scheduler, "PHASE_ORDER"
+                    ):
+                        valid_phases = self.scheduler.base_scheduler.PHASE_ORDER
+
+                    if start_phase not in valid_phases:
+                        raise ValueError(
+                            f"Corrupted start_phase '{start_phase}' in checkpoint state. "
+                            f"Must be one of {valid_phases}"
+                        )
+
+                    if start_phase:
+                        if hasattr(self.scheduler, "base_scheduler"):
+                            self.scheduler.base_scheduler.start_cycle = start_cycle
+                            self.scheduler.base_scheduler.start_phase = start_phase
+                        else:
+                            self.scheduler.start_cycle = start_cycle
+                            self.scheduler.start_phase = start_phase
+                        logger.info(
+                            "Scheduler configured to resume after cycle %d, phase %s",
+                            start_cycle,
+                            start_phase,
+                        )
+            else:
+                logger.warning(
+                    "resume_from path specified but training_state.pt not found: %s",
+                    state_path,
+                )
+
+        last_cycle_for_strength = -1
         try:
             for cycle, phase, num_epochs in self.scheduler:
                 if cycle < getattr(self, "_start_cycle", 0):
                     logger.info(f"Skipping cycle {cycle} (resuming from {self._start_cycle})")
                     continue
+
+                if cycle != last_cycle_for_strength:
+                    last_cycle_for_strength = cycle
+                    if self.config.get("distortion", {}).get("schedule_across_cycles", False):
+                        num_cycles = self.training_config.get("num_cycles", 3)
+                        distortion_config = self.config.get("distortion", {})
+                        strength_min = distortion_config.get("strength_min", 0.2)
+                        strength_max = distortion_config.get("strength_max", 0.9)
+
+                        if num_cycles > 1:
+                            diff = strength_max - strength_min
+                            cycle_strength = strength_min + diff * cycle / (num_cycles - 1)
+                        else:
+                            cycle_strength = strength_max
+
+                        logger.info(
+                            "Cycle %d: Scheduled distortion strength = %.4f",
+                            cycle + 1,
+                            cycle_strength,
+                        )
+
+                        if dream_generator is not None:
+                            dream_generator.strength = cycle_strength
+                        if nightmare_generator is not None:
+                            nightmare_generator.strength = cycle_strength
+
+                        text_column = self.config.get("dataset", {}).get("text_column", "text")
+                        max_length = self.config.get("model", {}).get("max_length", 128)
+                        batch_size = self.training_config.get("batch_size", 8)
+
+                        if dream_generator is not None and dream_base_dataset is not None:
+                            logger.info(
+                                "Regenerating dream dataset with strength %.4f",
+                                cycle_strength,
+                            )
+                            dream_data = dream_generator.generate(dream_base_dataset)
+                            dream_dataloader = _tokenize_dataset(
+                                dream_data,
+                                self.tokenizer,
+                                text_column,
+                                max_length,
+                                batch_size,
+                            )
+
+                        if nightmare_generator is not None and nightmare_base_dataset is not None:
+                            logger.info(
+                                "Regenerating nightmare dataset with strength %.4f",
+                                cycle_strength,
+                            )
+                            nightmare_data = nightmare_generator.generate(nightmare_base_dataset)
+                            nightmare_dataloader = _tokenize_dataset(
+                                nightmare_data,
+                                self.tokenizer,
+                                text_column,
+                                max_length,
+                                batch_size,
+                            )
 
                 if cycle == getattr(self, "_start_cycle", 0):
                     start_phase = getattr(self, "_start_phase", None)
@@ -345,10 +682,10 @@ class Trainer:
                     break
 
                 if self._stop_requested:
-                    logger.info("Training stop requested. Terminating after cycle %d.", cycle+1)
+                    logger.info("Training stop requested. Terminating after cycle %d.", cycle + 1)
                     break
                 # Early stopping check
-                if hasattr(self.scheduler, 'should_stop') and self.scheduler.should_stop:
+                if hasattr(self.scheduler, "should_stop") and self.scheduler.should_stop:
                     logger.info("Early stopping: halting training at cycle %d.", cycle + 1)
                     break
                 current_cycle = cycle
@@ -363,6 +700,7 @@ class Trainer:
                                 "status": "phase_start",
                             }
                         )
+
                     except Exception:
                         logger.debug("on_progress callback failed", exc_info=True)
                 logger.info(
@@ -372,13 +710,23 @@ class Trainer:
                     num_epochs,
                 )
 
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.PHASE_START,
+                        phase=phase,
+                        metadata={
+                            "cycle": cycle,
+                        },
+                    )
+                )
+
                 result: dict
 
                 phase_model = apply_phase_strategy(
                     phase=phase,
                     model=self.model,
                     device_pool=self.device_pool,
-                    ddp_wrapper=self.ddp_wrapper
+                    ddp_wrapper=self.ddp_wrapper,
                 )
 
                 if phase == "wake":
@@ -388,6 +736,8 @@ class Trainer:
                         config=self.training_config,
                         device=self.device,
                         scaler=self.scaler,
+                        callback_manager=self.callback_manager,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = wake_runner.run(train_dataloader, num_epochs=num_epochs)
 
@@ -396,6 +746,8 @@ class Trainer:
                         self._create_reference_model()
 
                 elif phase == "dream":
+                    if self.reference_model is None:
+                        self._create_reference_model()
                     dream_runner = DreamPhase(
                         model=phase_model,
                         optimizer=self.optimizer,
@@ -404,6 +756,8 @@ class Trainer:
                         reference_model=self.reference_model,
                         kl_weight=0.1,
                         scaler=self.scaler,
+                        callback_manager=self.callback_manager,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = dream_runner.run(dream_dataloader, num_epochs=num_epochs)
 
@@ -416,6 +770,8 @@ class Trainer:
                         device=self.device,
                         lr_multiplier=lr_multiplier,
                         scaler=self.scaler,
+                        callback_manager=self.callback_manager,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = nightmare_runner.run(nightmare_dataloader, num_epochs=num_epochs)
 
@@ -425,6 +781,8 @@ class Trainer:
                         config=self.compression_config,
                         device=self.device,
                         scaler=self.scaler,
+                        callback_manager=self.callback_manager,
+                        lr_scheduler=self.lr_scheduler,
                     )
                     result = compress_runner.run(
                         dataloader=train_dataloader,
@@ -464,16 +822,39 @@ class Trainer:
                     except Exception:
                         logger.debug("on_progress callback failed", exc_info=True)
 
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.PHASE_END,
+                        phase=phase,
+                        metrics={
+                            "avg_loss": result.get("avg_loss", 0.0),
+                        },
+                        metadata={
+                            "cycle": cycle,
+                        },
+                    )
+                )
+
                 # Log to tracker
                 self.tracker.log_phase(cycle, phase, result)
 
                 # Update adaptive scheduler with phase loss
                 avg_loss = result.get("avg_loss")
-                if hasattr(self.scheduler, 'update') and avg_loss is not None:
+                if hasattr(self.scheduler, "update") and avg_loss is not None:
                     self.scheduler.update(phase, avg_loss)
 
                 # Save checkpoint
                 self._save_checkpoint(cycle, phase)
+
+                self.callback_manager.emit(
+                    TrainingEvent(
+                        event_type=EventType.CHECKPOINT,
+                        phase=phase,
+                        metadata={
+                            "cycle": cycle,
+                        },
+                    )
+                )
 
                 # Check GPU VRAM pressure
                 if self.device.type == "cuda":
@@ -481,7 +862,6 @@ class Trainer:
                     has_pressure = check_vram_pressure(device_idx, threshold=0.85)
                     if not getattr(self, "_vram_alert_sent", False) and has_pressure:
                         self._vram_alert_sent = True
-                        import torch
                         try:
                             free, total = torch.cuda.mem_get_info(device_idx)
                             used = total - free
@@ -499,7 +879,7 @@ class Trainer:
                                     "usage_percent": f"{pct:.1f}%",
                                     "cycle": cycle + 1,
                                     "phase": phase,
-                                }
+                                },
                             )
                         except Exception as e:
                             logger.warning("Failed to record VRAM alert details: %s", e)
@@ -547,6 +927,7 @@ class Trainer:
         self.tracker.finish()
         logger.info("Training complete. Final model saved to %s", final_path)
         return self.history
+
 
 def create_trainer_from_config(config: dict, model=None, tokenizer=None) -> Trainer:
     """Create a Trainer instance from a configuration dictionary.

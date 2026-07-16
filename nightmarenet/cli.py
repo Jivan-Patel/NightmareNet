@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from nightmarenet import __version__
+from nightmarenet.hub.core import pull_model, push_model
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -29,6 +30,11 @@ def cmd_train(args: argparse.Namespace) -> int:
 
     with open(config_path) as f:
         config = yaml.safe_load(f)
+
+    if getattr(args, "resume", None):
+        if "training" not in config:
+            config["training"] = {}
+        config["training"]["resume_from"] = args.resume
 
     def on_event(event: dict) -> None:
         phase = event.get("status", "unknown")
@@ -162,6 +168,11 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         except (FileNotFoundError, OSError) as e:
             print(f"Error: could not load benchmark config: {e}", file=sys.stderr)
             return 1
+        output_dir = args.output if args.output else "./results"
+        no_cache = getattr(args, "no_cache", False)
+
+        orchestrator = EnsembleOrchestrator(args.config)
+        results = orchestrator.run(timeout_seconds=300, output_dir=output_dir, no_cache=no_cache)
 
         # Analyze pareto frontier
         pareto_front = get_pareto_frontier(results["models_summary"])
@@ -172,6 +183,8 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         results["degradation_curves"] = curves
 
         output_dir = args.output if args.output else "./results"
+        # We want json, csv, latex
+        # format_all reads 'models_summary' from results dict for table generation
         format_all(results, formats=["json", "csv", "latex"], output_dir=output_dir)
         print(f"\nResults saved to {output_dir}")
 
@@ -257,21 +270,128 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 def cmd_distort(args: argparse.Namespace) -> int:
     """Apply a distortion to input text."""
     from nightmarenet.distortions import dream, nightmare
+    from nightmarenet.distortions.dsl import ChainExecutor, list_presets, load_preset
+    from nightmarenet.distortions.dsl.parser import validate_chain_config
 
+    # Handle --list-presets
+    if getattr(args, "list_presets", False):
+        presets = list_presets()
+        if not presets:
+            print("No presets found.")
+            return 0
+        print(f"Available presets ({len(presets)}):")
+        for preset in presets:
+            print(f"  - {preset['name']}: {preset['description']}")
+            print(f"    Path: {preset['path']}")
+            print(f"    Version: {preset['version']}, Steps: {preset['num_steps']}")
+        return 0
+
+    # Handle --validate
+    if getattr(args, "validate", None):
+        is_valid, message = validate_chain_config(args.validate)
+        if is_valid:
+            print(f"✓ {message}")
+            return 0
+        else:
+            print(f"✗ {message}", file=sys.stderr)
+            return 1
+
+    # Handle --preset
+    if getattr(args, "preset", None):
+        preset_name = args.preset
+        text = args.text
+        strength = args.strength
+        seed = args.seed
+
+        try:
+            chain_config = load_preset(preset_name)
+            executor = ChainExecutor()
+            result = executor.execute(text, chain_config, overall_strength=strength, seed=seed)
+
+            print(f"Original:  {text}")
+            print(f"Distorted: {result}")
+            print(f"  Preset: {preset_name}, Strength: {strength}")
+            return 0
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"Error executing preset: {e}", file=sys.stderr)
+            return 1
+    from nightmarenet.distortions.registry import get_registry
+
+    # Handle single engine distortion (original behavior)
     text = args.text
     strength = args.strength
 
-    if args.type == "dream":
-        result = dream.distort(text, strength=strength, seed=args.seed)
-    elif args.type == "nightmare":
-        result = nightmare.distort(text, strength=strength, seed=args.seed)
-    else:
-        print(f"Error: unknown distortion type: {args.type}", file=sys.stderr)
-        return 1
+    registry = get_registry()
 
-    print(f"Original:  {text}")
-    print(f"Distorted: {result}")
-    print(f"  Type: {args.type}, Strength: {strength}")
+    # Handle --list-engines
+    if getattr(args, "list_engines", False):
+        engines_by_source = registry.list_engines_by_source()
+
+        print("Available distortion engines:")
+
+        if engines_by_source.get("builtin"):
+            print("\nBuilt-in:")
+            for engine in engines_by_source["builtin"]:
+                pkg_info = f" [{engine.get('package', '')}]" if engine.get("package") else ""
+                print(
+                    f"  {engine['name']} ({engine.get('phase', 'unknown')}){pkg_info} "
+                    f"- {engine.get('description', '')}"
+                )
+
+        if engines_by_source.get("plugin"):
+            print("\nPlugins:")
+            for engine in engines_by_source["plugin"]:
+                pkg_info = f" [{engine.get('package', '')}]" if engine.get("package") else ""
+                print(
+                    f"  {engine['name']} ({engine.get('phase', 'unknown')}){pkg_info} "
+                    f"- {engine.get('description', '')}"
+                )
+
+        if engines_by_source.get("custom"):
+            print("\nCustom:")
+            for engine in engines_by_source["custom"]:
+                print(
+                    f"  {engine['name']} ({engine.get('phase', 'unknown')}) "
+                    f"- {engine.get('description', '')}"
+                )
+
+        return 0
+
+    # Apply distortion
+    if args.engine:
+        # Use registry-based engine
+        if args.engine not in registry:
+            print(f"Error: unknown engine '{args.engine}'", file=sys.stderr)
+            print(f"Available: {', '.join(registry.engine_names)}", file=sys.stderr)
+            return 1
+
+        result = registry.apply(args.engine, text, strength=strength, seed=args.seed)
+        engine_meta = registry.get_engine_metadata(args.engine)
+        print(f"Original:  {text}")
+        print(f"Distorted: {result}")
+        print(
+            f"  Engine: {args.engine}, Phase: {engine_meta.get('phase', 'unknown')}, "
+            f"Strength: {strength}"
+        )
+    else:
+        # Legacy behavior for backward compatibility
+        from nightmarenet.distortions import dream, nightmare
+
+        if args.type == "dream":
+            result = dream.distort(text, strength=strength, seed=args.seed)
+        elif args.type == "nightmare":
+            result = nightmare.distort(text, strength=strength, seed=args.seed)
+        else:
+            print(f"Error: unknown distortion type: {args.type}", file=sys.stderr)
+            return 1
+
+        print(f"Original:  {text}")
+        print(f"Distorted: {result}")
+        print(f"  Type: {args.type}, Strength: {strength}")
+
     return 0
 
 
@@ -404,7 +524,31 @@ def cmd_transfer(args: argparse.Namespace) -> int:
         print("Invalid arguments for transfer command.", file=sys.stderr)
         return 1
     return 0
+def cmd_push(args: argparse.Namespace) -> int:
+    """Push a hardened model package structure to HuggingFace Hub."""
+    try:
+        push_model(
+            model_dir=args.model,
+            repo_id=args.hub,
+            metadata_path=args.metadata
+        )
+        return 0
+    except Exception as e:
+        print(f"Error during Hub push operational routing: {e}", file=sys.stderr)
+        return 1
 
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    """Pull a pre-hardened model snapshot layout from HuggingFace Hub."""
+    try:
+        pull_model(
+            repo_id=args.repo,
+            target_dir=args.output
+        )
+        return 0
+    except Exception as e:
+        print(f"Error during Hub pull operational routing: {e}", file=sys.stderr)
+        return 1
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -451,13 +595,35 @@ def build_parser() -> argparse.ArgumentParser:
     bench_parser.add_argument("--model", default="distilbert-base-uncased")
     bench_parser.add_argument("--config", help="YAML config path for ensemble benchmarking")
     bench_parser.add_argument("--output", help="Output directory for ensemble benchmark results")
+    bench_parser.add_argument(
+        "--no-cache", action="store_true", help="Force re-evaluation without using cache"
+    )
 
     # distort
     distort_parser = subparsers.add_parser("distort", help="Apply distortion to text")
-    distort_parser.add_argument("--type", required=True, choices=["dream", "nightmare"])
-    distort_parser.add_argument("--strength", type=float, default=0.3)
-    distort_parser.add_argument("--text", required=True)
-    distort_parser.add_argument("--seed", type=int, default=None)
+    distort_parser.add_argument(
+        "--type",
+        choices=["dream", "nightmare"],
+        help="Single engine type (mutually exclusive with --preset)",
+    )
+    distort_parser.add_argument(
+        "--strength", type=float, default=0.3, help="Distortion strength (0-1)"
+    )
+    distort_parser.add_argument("--text", required=True, help="Input text to distort")
+    distort_parser.add_argument(
+        "--seed", type=int, default=None, help="Random seed for reproducibility"
+    )
+    distort_parser.add_argument("--preset", help="Name of preset chain to apply")
+    distort_parser.add_argument(
+        "--list-presets", action="store_true", help="List available preset chains"
+    )
+    distort_parser.add_argument("--validate", help="Validate a preset YAML file")
+    distort_parser.add_argument(
+        "--engine", help="Distortion engine name (use --list-engines to see available)"
+    )
+    distort_parser.add_argument(
+        "--list-engines", action="store_true", help="List all available distortion engines"
+    )
 
     # foundation
     foundation_parser = subparsers.add_parser("foundation", help="Manage foundation models")
@@ -486,6 +652,42 @@ def build_parser() -> argparse.ArgumentParser:
     transfer_parser.add_argument("--transferred", help="Path to transferred evaluation JSON")
     transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")
 
+    # push command parsing mapping
+    push_parser = subparsers.add_parser(
+        "push",
+        help="Upload a hardened model directory to HuggingFace Hub"
+    )
+    push_parser.add_argument(
+        "--model",
+        required=True,
+        help="Path to local trained checkpoint directory"
+    )
+    push_parser.add_argument(
+        "--hub",
+        required=True,
+        help="Target HuggingFace repository destination space (org/repo)"
+    )
+    push_parser.add_argument(
+        "--metadata",
+        help="Optional path to training log metadata file (YAML)"
+    )
+
+    # pull command parsing mapping
+    pull_parser = subparsers.add_parser(
+        "pull",
+        help="Download a pre-hardened model snapshot layout locally"
+    )
+    pull_parser.add_argument(
+        "--repo",
+        required=True,
+        help="Target HuggingFace source space handle (org/repo)"
+    )
+    pull_parser.add_argument(
+        "--output",
+        required=True,
+        help="Target output directory vector to write weights artifacts into"
+    )
+
     return parser
 
 
@@ -504,6 +706,8 @@ def main(argv: Optional[list] = None) -> int:
         "distort": cmd_distort,
         "foundation": cmd_foundation,
         "transfer": cmd_transfer,
+        "push": cmd_push,
+        "pull": cmd_pull,
     }
 
     return commands[args.command](args)

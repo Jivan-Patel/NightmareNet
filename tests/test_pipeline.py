@@ -85,10 +85,12 @@ class TestPipelineIngest:
     def test_ingest_text_content(self, minimal_config):
         """Ingesting raw text should produce a Dataset."""
         pipe = Pipeline(minimal_config)
-        content = "\n\n".join([
-            f"Paragraph {i}: This sentence is long enough to be valid training data."
-            for i in range(30)
-        ])
+        content = "\n\n".join(
+            [
+                f"Paragraph {i}: This sentence is long enough to be valid training data."
+                for i in range(30)
+            ]
+        )
         pipe.ingest(text_content=content)
         assert pipe._dataset is not None
         assert len(pipe._dataset) >= 10
@@ -155,24 +157,26 @@ class TestPipelineEventCallback:
     def test_events_on_ingest(self, minimal_config):
         events = []
         pipe = Pipeline(minimal_config, on_event=lambda e: events.append(e))
-        content = "\n\n".join([
-            f"Paragraph {i}: Long enough text for ingestion testing purposes here."
-            for i in range(30)
-        ])
+        content = "\n\n".join(
+            [
+                f"Paragraph {i}: Long enough text for ingestion testing purposes here."
+                for i in range(30)
+            ]
+        )
         pipe.ingest(text_content=content)
         assert len(events) >= 1
         assert events[0]["status"] == "ingesting"
 
     def test_event_callback_exception_doesnt_crash(self, minimal_config):
         """If callback raises, pipeline should not crash."""
+
         def bad_callback(e):
             raise RuntimeError("callback error")
 
         pipe = Pipeline(minimal_config, on_event=bad_callback)
-        content = "\n\n".join([
-            f"Paragraph {i}: This is text number {i} with enough characters."
-            for i in range(30)
-        ])
+        content = "\n\n".join(
+            [f"Paragraph {i}: This is text number {i} with enough characters." for i in range(30)]
+        )
         # Should not raise
         pipe.ingest(text_content=content)
 
@@ -210,8 +214,10 @@ class TestPipelineRunner:
         assert get_runner(rid) is runner
         assert get_runner("nonexistent") is None
 
+
 class TestAdaptiveTermination:
     """Tests adaptive cycle termination."""
+
     def test_auto_terminate_disabled(self, minimal_config):
         """Adaptive termination should do nothing when disabled."""
 
@@ -223,10 +229,7 @@ class TestAdaptiveTermination:
         minimal_config["training"]["auto_terminate"] = False
 
         event = {"cycle": 0}
-        with patch(
-            "nightmarenet.pipeline.quick_robustness_score"
-        ) as mock_score:
-
+        with patch("nightmarenet.pipeline.quick_robustness_score") as mock_score:
             pipe._handle_cycle_end(event)
 
             mock_score.assert_not_called()
@@ -246,10 +249,7 @@ class TestAdaptiveTermination:
         pipe._trainer.device = "cpu"
         pipe._dataset = MagicMock()
 
-        with patch(
-            "nightmarenet.pipeline.quick_robustness_score"
-        ) as mock_score:
-
+        with patch("nightmarenet.pipeline.quick_robustness_score") as mock_score:
             mock_score.side_effect = [
                 0.80,
                 0.805,
@@ -271,3 +271,255 @@ class TestAdaptiveTermination:
         pipe = Pipeline(minimal_config)
 
         assert pipe.config["training"]["num_cycles"] == 1
+
+
+class TestEvalSplit:
+    """Tests for the train/eval data split introduced in prepare()."""
+
+    def _make_dataset(self, n: int = 50):
+        """Return a minimal HuggingFace Dataset with `n` text samples."""
+        from datasets import Dataset
+
+        return Dataset.from_dict({
+            "text": [
+                f"Sample {i}: This is a valid training sentence with enough text."
+                for i in range(n)
+            ]
+        })
+
+    def test_eval_split_creates_held_out_dataset(self, minimal_config):
+        """With a large enough dataset, prepare() should split into train and eval."""
+        minimal_config["evaluation"] = {"eval_split_ratio": 0.2, "metrics": ["recall"]}
+
+        pipe = Pipeline(minimal_config)
+        pipe._dataset = self._make_dataset(50)
+
+        with (
+            patch("nightmarenet.pipeline.create_generators_from_config") as mock_gen,
+            patch("nightmarenet.pipeline.Trainer") as mock_trainer_cls,
+            patch("nightmarenet.pipeline._tokenize_dataset") as mock_tok,
+        ):
+            mock_dream = MagicMock()
+            mock_nightmare = MagicMock()
+            mock_dream.generate.return_value = pipe._dataset
+            mock_nightmare.generate.return_value = pipe._dataset
+            mock_gen.return_value = (mock_dream, mock_nightmare)
+
+            mock_trainer = MagicMock()
+            mock_trainer.model = MagicMock()
+            mock_trainer.tokenizer = MagicMock()
+            mock_trainer_cls.return_value = mock_trainer
+
+            mock_tok.return_value = MagicMock()
+
+            pipe.prepare()
+
+        assert pipe._eval_dataset is not None
+        assert len(pipe._eval_dataset) == 10
+        assert len(pipe._dataset) - len(pipe._eval_dataset) == 40
+
+    def test_eval_split_small_dataset_fallback(self, minimal_config):
+        """When dataset is too small, prepare() warns and uses full dataset for eval."""
+        minimal_config["evaluation"] = {"eval_split_ratio": 0.2, "metrics": ["recall"]}
+
+        pipe = Pipeline(minimal_config)
+        pipe._dataset = self._make_dataset(20)
+
+        with (
+            patch("nightmarenet.pipeline.create_generators_from_config") as mock_gen,
+            patch("nightmarenet.pipeline.Trainer") as mock_trainer_cls,
+            patch("nightmarenet.pipeline._tokenize_dataset") as mock_tok,
+        ):
+            mock_dream = MagicMock()
+            mock_nightmare = MagicMock()
+            mock_dream.generate.return_value = pipe._dataset
+            mock_nightmare.generate.return_value = pipe._dataset
+            mock_gen.return_value = (mock_dream, mock_nightmare)
+
+            mock_trainer = MagicMock()
+            mock_trainer.model = MagicMock()
+            mock_trainer.tokenizer = MagicMock()
+            mock_trainer_cls.return_value = mock_trainer
+
+            mock_tok.return_value = MagicMock()
+
+            import logging
+
+            with patch.object(logging.getLogger("nightmarenet.pipeline"), "warning") as mock_warn:
+                pipe.prepare()
+                assert mock_warn.called
+
+        assert pipe._eval_dataset is not None
+        assert len(pipe._eval_dataset) == 20
+
+    def test_eval_split_disabled_when_zero(self, minimal_config):
+        """Setting eval_split_ratio=0.0 must skip splitting entirely."""
+        minimal_config["evaluation"] = {"eval_split_ratio": 0.0, "metrics": ["recall"]}
+
+        pipe = Pipeline(minimal_config)
+        pipe._dataset = self._make_dataset(50)
+
+        with (
+            patch("nightmarenet.pipeline.create_generators_from_config") as mock_gen,
+            patch("nightmarenet.pipeline.Trainer") as mock_trainer_cls,
+            patch("nightmarenet.pipeline._tokenize_dataset") as mock_tok,
+        ):
+            mock_dream = MagicMock()
+            mock_nightmare = MagicMock()
+            mock_dream.generate.return_value = pipe._dataset
+            mock_nightmare.generate.return_value = pipe._dataset
+            mock_gen.return_value = (mock_dream, mock_nightmare)
+
+            mock_trainer = MagicMock()
+            mock_trainer.model = MagicMock()
+            mock_trainer.tokenizer = MagicMock()
+            mock_trainer_cls.return_value = mock_trainer
+
+            mock_tok.return_value = MagicMock()
+
+            pipe.prepare()
+
+        assert pipe._eval_dataset is not None
+        assert len(pipe._eval_dataset) == 50
+
+    def test_prepare_sets_distortion_fn(self, minimal_config):
+        """prepare() must set _distortion_fn to a non-None callable."""
+        minimal_config["evaluation"] = {"eval_split_ratio": 0.2, "metrics": ["recall"]}
+
+        pipe = Pipeline(minimal_config)
+        pipe._dataset = self._make_dataset(50)
+
+        with (
+            patch("nightmarenet.pipeline.create_generators_from_config") as mock_gen,
+            patch("nightmarenet.pipeline.Trainer") as mock_trainer_cls,
+            patch("nightmarenet.pipeline._tokenize_dataset") as mock_tok,
+        ):
+            mock_dream = MagicMock()
+            mock_nightmare = MagicMock()
+            mock_dream.generate.return_value = pipe._dataset
+            mock_nightmare.generate.return_value = pipe._dataset
+            mock_gen.return_value = (mock_dream, mock_nightmare)
+
+            mock_trainer = MagicMock()
+            mock_trainer.model = MagicMock()
+            mock_trainer.tokenizer = MagicMock()
+            mock_trainer_cls.return_value = mock_trainer
+
+            mock_tok.return_value = MagicMock()
+
+            pipe.prepare()
+
+        assert callable(pipe._distortion_fn)
+
+    def test_evaluate_passes_base_dataset_and_distortion_fn(self, minimal_config):
+        """evaluate() must pass base_dataset and distortion_fn to Evaluator.evaluate()."""
+        from datasets import Dataset
+
+        pipe = Pipeline(minimal_config)
+
+        mock_trainer = MagicMock()
+        mock_trainer.device = "cpu"
+        mock_trainer.model = MagicMock()
+        mock_trainer.tokenizer = MagicMock()
+
+        pipe._trainer = mock_trainer
+        pipe._baseline_model = MagicMock()
+        pipe._eval_dl = MagicMock()
+        pipe._train_dl = MagicMock()
+        pipe._eval_dataset = Dataset.from_dict({"text": ["sample one", "sample two"]})
+        pipe._distortion_fn = lambda text, strength, seed=None: text
+
+        fake_results = {
+            "label": "test",
+            "recall": {
+                "token_accuracy": 0.9,
+                "perplexity": 1.5,
+            },
+        }
+
+        with patch("nightmarenet.pipeline.Evaluator") as mock_evaluator_cls:
+            mock_eval_instance = MagicMock()
+            mock_eval_instance.evaluate.return_value = fake_results
+            mock_eval_instance.compare.return_value = {
+                "metrics": {},
+                "robustness_delta": None,
+            }
+            mock_eval_instance.generate_report.return_value = "# Report"
+            mock_eval_instance.save_results.return_value = None
+            mock_evaluator_cls.return_value = mock_eval_instance
+
+            with patch("nightmarenet.pipeline.trigger_webhook"):
+                pipe.evaluate()
+
+            for c in mock_eval_instance.evaluate.call_args_list:
+                kwargs = c.kwargs
+                assert kwargs.get("base_dataset") is pipe._eval_dataset
+                assert kwargs.get("distortion_fn") is pipe._distortion_fn
+                assert kwargs.get("clean_dataloader") is pipe._eval_dl
+
+
+class TestPerCycleMetrics:
+    """Tests per-cycle evaluation via evaluate_cycle()."""
+
+    def test_per_cycle_metrics_appended(self, minimal_config):
+        pipe = Pipeline(minimal_config)
+        pipe._trainer = MagicMock()
+        pipe._trainer.model = MagicMock()
+        pipe._trainer.tokenizer = MagicMock()
+        pipe._trainer.device = "cpu"
+        pipe._dataset = MagicMock()
+        pipe._eval_dl = MagicMock()
+        pipe._eval_dataset = MagicMock()
+        pipe._distortion_fn = MagicMock()
+
+        minimal_config["training"]["auto_terminate"] = False
+
+        with patch("nightmarenet.pipeline.evaluate_cycle") as mock_eval_cycle:
+            mock_eval_cycle.return_value = {
+                "accuracy": 0.85,
+                "robustness": {
+                    0.3: 0.8,
+                    0.5: 0.7,
+                    0.7: 0.6,
+                },
+            }
+
+            pipe._handle_cycle_end({"cycle": 0})
+
+            mock_eval_cycle.assert_called_once()
+            assert len(pipe.metrics.per_cycle_metrics) == 1
+            assert pipe.metrics.per_cycle_metrics[0]["cycle"] == 0
+            assert pipe.metrics.per_cycle_metrics[0]["accuracy"] == 0.85
+
+    def test_per_cycle_metrics_skipped_without_eval_dl(self, minimal_config):
+        """No eval_dl means the lightweight probe is skipped."""
+        pipe = Pipeline(minimal_config)
+        pipe._trainer = MagicMock()
+        pipe._dataset = MagicMock()
+
+        minimal_config["training"]["auto_terminate"] = False
+
+        pipe._handle_cycle_end({"cycle": 0})
+
+        assert pipe.metrics.per_cycle_metrics == []
+
+    def test_per_cycle_metrics_exception_does_not_crash_training(self, minimal_config):
+        """Exceptions from evaluate_cycle() should not crash training."""
+        pipe = Pipeline(minimal_config)
+        pipe._trainer = MagicMock()
+        pipe._trainer.model = MagicMock()
+        pipe._trainer.tokenizer = MagicMock()
+        pipe._trainer.device = "cpu"
+        pipe._dataset = MagicMock()
+        pipe._eval_dl = MagicMock()
+        pipe._eval_dataset = MagicMock()
+        pipe._distortion_fn = MagicMock()
+
+        minimal_config["training"]["auto_terminate"] = False
+
+        with patch("nightmarenet.pipeline.evaluate_cycle") as mock_eval_cycle:
+            mock_eval_cycle.side_effect = RuntimeError("boom")
+
+            pipe._handle_cycle_end({"cycle": 0})
+
+            assert pipe.metrics.per_cycle_metrics == []

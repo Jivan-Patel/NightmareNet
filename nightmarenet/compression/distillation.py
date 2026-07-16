@@ -1,16 +1,17 @@
 """RSLAD-style adversarial robust distillation for the compression phase."""
 
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as func
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
-
 
 def fgsm_perturb(model: nn.Module, batch: dict, epsilon: float = 0.01) -> dict:
     """Generate FGSM adversarial examples from a batch.
@@ -26,26 +27,27 @@ def fgsm_perturb(model: nn.Module, batch: dict, epsilon: float = 0.01) -> dict:
     model.eval()
     input_ids = batch.get("input_ids")
     attention_mask = batch.get("attention_mask")
+    labels = batch.get("labels", input_ids)
 
-    # Get the embedding layer
     embedding_layer = model.get_input_embeddings()
-    embeds = embedding_layer(input_ids).detach().requires_grad_(True)
+    embeds = embedding_layer(input_ids).detach()
+    embeds.requires_grad_(True)
 
     outputs = model(
         inputs_embeds=embeds,
         attention_mask=attention_mask,
-        labels=input_ids,
+        labels=labels,
     )
     loss = outputs.loss
-    loss.backward()
 
-    # FGSM step
-    adv_embeds = (embeds + epsilon * embeds.grad.sign()).detach()
+    # Use autograd.grad to isolate gradient w.r.t. embeds only,
+    # avoiding side effects on model parameter gradients.
+    (embeds_grad,) = torch.autograd.grad(loss, embeds)
+    adv_embeds = (embeds + epsilon * embeds_grad.sign()).detach()
 
-    return {
-        "inputs_embeds": adv_embeds,
-        "attention_mask": attention_mask,
-    }
+    adv_dict = {k: v for k, v in batch.items() if k not in ("input_ids", "labels")}
+    adv_dict["inputs_embeds"] = adv_embeds
+    return adv_dict
 
 
 def run_distillation(
@@ -105,12 +107,11 @@ def run_distillation(
                 task_loss = student_out.loss
 
                 # KL divergence loss with temperature scaling
-                T = temperature
-                kl_loss = F.kl_div(
-                    F.log_softmax(student_logits / T, dim=-1),
-                    F.softmax(teacher_logits / T, dim=-1),
+                kl_loss = func.kl_div(
+                    func.log_softmax(student_logits / temperature, dim=-1),
+                    func.softmax(teacher_logits / temperature, dim=-1),
                     reduction="batchmean",
-                ) * (T ** 2)
+                ) * (temperature ** 2)
 
                 loss = alpha * kl_loss + (1.0 - alpha) * task_loss
 

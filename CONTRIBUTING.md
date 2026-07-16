@@ -11,6 +11,8 @@ Thank you for helping improve NightmareNet. This project uses a **research-first
 1. **Star this repository** — It helps us gauge community interest and prioritize features.
 2. **Follow [@Adit-Jain-srm](https://github.com/Adit-Jain-srm)** — Stay updated on releases, related projects, and research.
 3. **Read this entire guide** — PRs that don't follow the coding standards or skip tests will be asked to revise.
+4.  **Please read our [Code of Conduct](CODE_OF_CONDUCT.md)** before contributing to help maintain a welcoming and respectful community.
+> Maintainers verify star/follow status before merging. PRs from accounts that haven't completed steps 1-2 will be asked to do so before review begins.
 
 ---
 
@@ -19,13 +21,15 @@ Thank you for helping improve NightmareNet. This project uses a **research-first
 1. [Before you start](#before-you-start)
 2. [Opening issues](#opening-issues)
 3. [Issue assignment rules](#issue-assignment-rules)
-4. [Local development setup](#1-local-development-setup)
-5. [Architecture pointers (OSS core vs hosted platform)](#2-architecture-pointers)
-6. [Adding a new distortion](#3-adding-a-new-distortion)
-7. [Coding standards](#4-coding-standards)
-8. [Documentation](#5-documentation)
-9. [PR checklist](#6-pr-checklist)
-10. [Where to ask for help](#7-where-to-ask-for-help)
+4. [Code philosophy](#code-philosophy)
+5. [Local development setup](#local-development-setup)
+6. [Architecture pointers](#architecture-pointers)
+7. [Adding a new distortion](#adding-a-new-distortion)
+8. [Coding standards](#coding-standards)
+9. [Documentation](#documentation)
+10. [PR checklist](#pr-checklist)
+11. [ECSoC'26 Contributors](#ecsoc26-contributors)
+12. [Where to ask for help](#where-to-ask-for-help)
 
 ---
 
@@ -51,7 +55,7 @@ Types: `[Feature]`, `[Bug]`, `[Docs]`, `[Refactor]`, `[Test]`, `[Infra]`
    - Any new dependencies required
 
 3. **Acceptance Criteria** - Concrete, checkable items that define "done". Use checkboxes:
-   ```
+   ```markdown
    - [ ] Function X returns correct output for input Y
    - [ ] Tests added covering the new behavior
    - [ ] Documentation updated
@@ -125,7 +129,10 @@ If two people request the same issue simultaneously (within 1 hour):
 - Small PRs merge faster than large ones - if an issue is big, ask if it can be split into sub-issues
 - If you're stuck, comment on the issue asking for help - don't go silent for a week
 - **We merge quickly.** Focus on completing your current assigned issue before requesting new ones. Deliver first, then pick up more.
-- **Think you can do it better?** If an issue is assigned but has no PR or progress after a few days, feel free to comment with your approach. Quality implementations are always welcome - we'd rather merge the best solution regardless of who was "first."
+
+> [!TIP]
+> **Think you can do it better?** Don't be discouraged by an existing assignment. If you believe you can deliver a better or faster implementation, comment with your detailed approach - even if someone else already requested the issue. We evaluate approaches on merit, not arrival order. Include: which files you'll change, what enhancements you'd add beyond the stated requirements, and your timeline. If your plan is demonstrably stronger (more complete, better tested, or addresses edge cases the current assignee missed), we'll reassign. The goal is the best possible contribution, not a queue.
+
 - All assignment decisions are at the maintainer's discretion based on these guidelines. The goal is shipping great code, not bureaucracy.
 
 ---
@@ -161,7 +168,7 @@ Any PR that changes the frontend must include:
 
 ---
 
-## 1. Local development setup
+## Local development setup
 
 ### Prerequisites
 
@@ -192,55 +199,71 @@ pip install -e ".[dev,api]"
 
 The `dev` extra brings in `pytest`, `ruff`, `mypy`, and the test fixtures. The `api` extra brings in `fastapi`, `uvicorn`, and `slowapi` for the FastAPI service.
 
-### Pre-commit hooks (recommended)
+### Pre-commit hooks (optional)
+
+There is no `.pre-commit-config.yaml` committed yet. If you want pre-commit locally:
 
 ```bash
 pip install pre-commit
+cat > .pre-commit-config.yaml << 'EOF'
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+EOF
 pre-commit install
 ```
 
-This runs `ruff` and a small set of fast checks on every commit. To run on the whole repo at once:
-
-```bash
-pre-commit run --all-files
-```
+Or simply run `make lint` before committing.
 
 ### Verify the environment
 
+The Makefile mirrors exactly what CI runs — use it instead of memorizing
+individual commands:
+
 ```bash
-pytest tests/ -v --tb=short          # 288+ tests, all should pass
-ruff check .                         # zero errors expected
-mypy nightmarenet/                   # type-check the OSS core
+make check          # lint + typecheck + test (what CI runs on every PR)
+make test            # just pytest with coverage
+make lint            # just ruff
+make typecheck       # just mypy
+make format          # auto-fix formatting with ruff format
 ```
 
 If you also touched the dashboard:
 
 ```bash
-cd frontend
-npm install
-npm run build                        # production build
-npm run dev                          # dev server on :3000
+make frontend-build  # production build (cd frontend && npm ci && npm run build)
+make frontend-test   # frontend test suite
+```
+
+Or run everything, Python + frontend:
+
+```bash
+make all
 ```
 
 ### Start the API for ad-hoc testing
 
 ```bash
-uvicorn nightmarenet.api.app:app --reload --port 8000
+uvicorn nightmarenet.api.app:app --reload --port 8000 --env-file .env
 ```
 
 Hit `http://127.0.0.1:8000/api/v1/health` to confirm.
 
 ---
 
-## 2. Architecture pointers
+## Architecture pointers
 
 NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint when adding code.
 
 | Package | Purpose | Allowed dependencies |
 |---------|---------|---------------------|
 | `nightmarenet/` | OSS core: distortions, training loop, evaluation, CLI, FastAPI inference endpoints | `torch`, `transformers`, `pydantic`, `fastapi`, `pyyaml`, `slowapi` (optional) |
-| `nightmarenet_server/` *(future)* | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
-| `frontend/` | Next.js 14 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
+| `nightmarenet_server/` | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
+| `frontend/` | Next.js 16 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
 
 > [!IMPORTANT]
 > The OSS core **must not** import anything from `nightmarenet_server`, and **must not** depend on PostgreSQL, Redis, Celery, OAuth providers, or any hosted-only library. If your change touches both, propose the boundary explicitly in the PR description and split the patches.
@@ -257,16 +280,15 @@ NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint w
 
 - [`docs/architecture/PRD.md`](docs/architecture/PRD.md) — product requirements, personas, success metrics, requirements traceability
 - [`docs/architecture/TRD.md`](docs/architecture/TRD.md) — technical requirements
-- [`docs/api/openapi.yaml`](docs/api/openapi.yaml) — OpenAPI spec for the OSS HTTP surface
+- [Interactive API docs](http://localhost:8000/docs) (auto-generated by FastAPI) — OpenAPI spec for the OSS HTTP surface
 - [`docs/research/paper-draft.md`](docs/research/paper-draft.md) — academic paper draft (cite this in PRs that touch the algorithm)
 - [`docs/research/benchmark-v1.md`](docs/research/benchmark-v1.md) — reproducible benchmark methodology
-- [`.cursor/plans/`](.cursor/plans) — sprint-level execution plans
 
 ---
 
-## 3. Adding a new distortion
+## Adding a new distortion
 
-Distortions are first-class plugins. The full walkthrough is in [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
+Distortions are first-class plugins. The full walkthrough is in [`docs/plugin_development.md`](docs/plugin_development.md) and [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
 
 ### The signature
 
@@ -315,7 +337,7 @@ Mirror the package layout under `tests/`. At minimum:
 
 ---
 
-## 4. Coding standards
+## Coding standards
 
 ### Python
 
@@ -349,14 +371,17 @@ Mirror the package layout under `tests/`. At minimum:
 - Conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `perf:`.
 - One concern per commit. Squash exploratory commits before pushing.
 - Branch names: `feat/<short-slug>`, `fix/<short-slug>`, `docs/<short-slug>`.
+- **All PRs target `main`** unless the issue specifies otherwise.
+- **Do not force-push** to PR branches. Push review fixes as new commits so reviewers can see incremental changes. Maintainers will squash on merge.
+- Signed commits are not required but are appreciated.
 
 ---
 
-## 5. Documentation
+## Documentation
 
 All PRs that change user-facing behavior **must** update relevant documentation:
 
-- **API changes** → Update `docs/api/` OpenAPI spec and relevant endpoint docs
+- **API changes** → Run server and check [auto-generated docs](http://localhost:8000/docs); update relevant endpoint descriptions in code
 - **New features** → Add to `README.md` feature table + relevant section
 - **Config changes** → Update `configs/default.yaml` comments + `CLAUDE.md` if applicable
 - **Distortion changes** → Update the README distortion table + `docs/research/paper-draft.md`
@@ -367,22 +392,23 @@ Good documentation is as important as good code. If you're unsure what to update
 
 ---
 
-## 6. PR checklist
+## PR checklist
 
-> **CI runs `ruff check .` on every PR and will block merge if there are lint errors.** Run it locally before pushing to avoid failed checks.
+> **Assignment is mandatory.** Do NOT open a PR for an issue you are not assigned to. Request assignment first (see [Issue Assignment Rules](#issue-assignment-rules)). Unassigned PRs will be closed without review.
+
+> **CI runs `make check` on every PR and will block merge if it fails.** Run it locally before pushing to avoid failed checks.
 
 Before requesting review, confirm every box.
 
+- [ ] I am **assigned** to the linked issue.
 - [ ] I have **starred the repo** and **followed [@Adit-Jain-srm](https://github.com/Adit-Jain-srm)**.
-- [ ] `pytest tests/ -v --tb=short` — green locally.
-- [ ] `ruff check .` — zero errors.
-- [ ] `mypy nightmarenet/` — no new errors.
-- [ ] If frontend changed: `cd frontend && npm run build` succeeds.
+- [ ] `make check` — green locally (runs lint + typecheck + test).
+- [ ] If frontend changed: `make frontend-build` succeeds.
 - [ ] No `from __future__ import annotations` added under `nightmarenet/api/`.
 - [ ] No new `nightmarenet/` import of a hosted-only library (`sqlalchemy`, `redis`, `celery`, `psycopg2`, `stripe`).
 - [ ] New code is type-annotated; new public APIs have Google-style docstrings.
 - [ ] New distortions / metrics / phases are tested for determinism, edge inputs, and registry round-trip.
-- [ ] Documentation updated (see [Section 5](#5-documentation)).
+- [ ] Documentation updated (see [Documentation](#documentation)).
 - [ ] PR description includes:
   - one-paragraph summary
   - link to the issue / discussion
@@ -395,16 +421,86 @@ Before requesting review, confirm every box.
 
 CI mirrors the local checks plus a security scan. Merging is blocked on a green CI and one approving review.
 
+### When to request review from maintainer
+
+Only request review (`@Adit-Jain-srm`) when ALL of the following are true:
+
+1. **CI is green** - All Python lint, type-check, and test jobs pass.
+2. **CodeRabbit comments resolved** - Every automated suggestion is either fixed or has a reply explaining why you disagree.
+3. **PR template checklists complete** - All boxes checked in Pre-submission, Quality, and Documentation sections.
+4. **Acceptance criteria met** - Every checkbox from the linked issue is addressed in the PR.
+
+Do NOT request review with failing CI, unresolved bot comments, or unchecked boxes. Premature review requests waste maintainer time and will be dismissed without reading the code.
+
 ---
 
-## 7. Where to ask for help
+## ECSoC'26 Contributors
+
+This section applies to contributors participating in the **ECSoC'26** open-source track.
+
+### Bonus XP Labels
+
+These are applied by maintainers at merge time based on quality. **Do not request them.** Focus on correct PR submission and code quality - bonuses follow naturally.
+
+| Label | Bonus | Criteria |
+|-------|-------|----------|
+| `good-pr` | +15 XP | Clean PR description, all checklist items checked, CI green, no revision rounds |
+| `good-issue` | +10 XP | Well-researched issue with file paths, code references, and clear acceptance criteria |
+| `good-ui` | +25 XP | Frontend changes with before/after screenshots, responsive design, accessibility |
+| `good-backend` | +50 XP | Backend changes demonstrating architectural understanding, proper error handling, tests |
+
+### Rules for ECSoC'26 Participants
+
+1. **Maximum 3 concurrent assignments without an open PR.** Once you have an open PR on an issue, it no longer counts toward the limit. Finish and deliver before requesting more.
+
+2. **No spam or AI slop.** PRs that are clearly unreviewed AI output (hallucinated APIs, untested code, copy-pasted without understanding) will be closed immediately and may result in disqualification from the program.
+
+3. **Quality over speed.** A PR that needs 3 revision rounds costs more maintainer time than one that merges on first review. Read the codebase, run tests locally, follow conventions.
+
+4. **Approach comment required.** Before requesting assignment, post a comment explaining your planned approach (which files, what changes, estimated timeline). "Assign me" without context will be ignored.
+
+5. **7-day activity window.** If assigned with no PR and no progress update comment within 7 days, you will be unassigned without warning.
+
+6. **One PR per issue.** Don't bundle unrelated fixes. If you find something else while working, open a separate issue for it.
+
+7. **Run CI locally before pushing.** `make check` (lint + typecheck + test). PRs that fail CI on first push suggest you didn't test locally.
+
+8. **Disclose AI usage.** If you used AI tools (Copilot, ChatGPT, Claude, Cursor), state it in the PR description. We welcome AI-assisted contributions. We reject blindly pasted output.
+
+9. **Compete on quality, not timing.** See an assigned issue where you have a better approach? Comment with your detailed plan - which files, what enhancements, your timeline. We reassign based on the strongest approach, not who commented first. Don't let an existing assignment stop you from proposing a superior implementation.
+
+### How to Maximize Your Score
+
+- Pick issues matching your skill level (start with L1 if new to the codebase)
+- Read the source code around your change before implementing
+- Include tests for new functionality (automatic `good-pr` signal)
+- Write PR descriptions that explain WHY, not just WHAT
+- Respond to review comments within 24 hours
+- Follow up merged PRs with related improvements (builds trust, gets `good-backend`)
+
+### Pro Tips (what separates great contributors from average ones)
+
+1. **Resolve CodeRabbitAI suggestions.** Our repo uses automated code review. When CodeRabbit leaves suggestions on your PR, address each one (fix it or explain why you disagree). Unresolved bot comments signal laziness to reviewers.
+
+2. **Re-request review after addressing feedback.** After making changes requested by the code owner, click "Re-request review" on GitHub. Don't just push commits silently and wait - signal that you're ready for the next round.
+
+3. **Complete ALL checklists before requesting review.** The PR template has Acceptance Criteria, Pre-submission Checklist, and Quality Checklist. Every box must be checked (or have an explicit explanation for why not). Reviewers will reject PRs with unchecked boxes without reading the code.
+
+4. **Ask questions when things are ambiguous.** If the issue description is unclear, a design choice has multiple valid approaches, or you're unsure about scope - comment on the issue and ask. This shows ownership and critical thinking. Contributors who ask smart questions earn bonus labels faster than those who guess wrong and waste review cycles.
+
+5. **Reference specific code in your approach.** When requesting assignment or discussing implementation, cite file paths and line numbers. "I'll modify `nightmarenet/training/phases.py:429-528` to add the distillation loss" is 10x better than "I'll implement the feature."
+
+6. **Maintain a local learnings file.** If you plan to work on multiple issues, create a `LEARNINGS.md` in your local setup (gitignored) to track patterns, gotchas, and conventions you discover. This accelerates your second and third PRs dramatically - you won't repeat mistakes or re-read the same code twice.
+
+---
+
+## Where to ask for help
 
 - **GitHub Discussions** — `https://github.com/Adit-Jain-srm/NightmareNet/discussions`
   - `q-and-a` for "how do I..." questions
   - `ideas` for feature proposals (RFC threads welcome)
   - `research` for paper-related discussion, benchmark proposals, citation requests
 - **GitHub Issues** — bug reports and concrete tasks
-- **Discord** — `https://discord.gg/nightmarenet` *(launching with Sprint 8)*; channels for `#dev`, `#research`, `#hosted-platform`, `#help`
 - **Direct contact** — for security disclosures, email the maintainers per [`SECURITY.md`](SECURITY.md). Do **not** open public issues for vulnerabilities.
 
 We respond fastest to issues that include a minimal reproducible example, the relevant config snippet, and the output of `pip list | findstr nightmarenet` (or `pip freeze | grep nightmarenet` on Unix).

@@ -8,6 +8,7 @@ Usage:
     uvicorn nightmarenet.api.app:app --host 0.0.0.0 --port 8000
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -69,12 +70,29 @@ _TRAINING_CONFIG_BODY = Body(...)
 _COMPARE_BODY = Body(...)
 _DEMO_BODY = Body(...)
 
+
+# ------------------------------------------------------------------
+# Startup: load persisted run state
+# ------------------------------------------------------------------
+
+
+def _load_persisted_runs() -> None:
+    """Load persisted pipeline runs from disk on startup."""
+    try:
+        from nightmarenet.pipeline_runner import load_persisted_runs
+        load_persisted_runs()
+        logger.info("Loaded persisted pipeline runs from disk")
+    except Exception:
+        logger.debug("Failed to load persisted runs", exc_info=True)
+
+
 app = FastAPI(
     title="NightmareNet API",
     description="Autonomous AI Self-Improvement Platform — Dream & Nightmare Distortion Service",
     version=__version__,
     docs_url="/docs",
     redoc_url="/redoc",
+    on_startup=[_load_persisted_runs],
 )
 
 # --- Rate limiting ---
@@ -983,6 +1001,20 @@ async def get_pipeline_report(run_id: str):
     )
 
 
+@app.get(
+    "/api/v1/pipeline/runs",
+    response_model=list[PipelineStatusResponse],
+    summary="List all pipeline runs (active and historical)",
+    tags=["pipeline"],
+)
+async def list_pipeline_runs():
+    """List all pipeline runs, including completed historical runs from disk."""
+    from nightmarenet.pipeline_runner import list_all_runs
+
+    runs = list_all_runs(include_historical=True)
+    return [PipelineStatusResponse(**run) for run in runs]
+
+
 _TEST_WEBHOOK_BODY = Body(...)
 
 
@@ -996,12 +1028,22 @@ _TEST_WEBHOOK_BODY = Body(...)
     summary="Send a test notification to a webhook URL",
     tags=["notifications"],
 )
+@limiter.limit("5/minute")
 async def test_webhook_endpoint(
     request: Request,
     body: TestWebhookRequest = _TEST_WEBHOOK_BODY,
 ):
     """Send a test notification payload to verify webhook integration."""
-    from nightmarenet.utils.webhooks import trigger_webhook
+    from nightmarenet.utils.webhooks import trigger_webhook, validate_webhook_url
+
+    if not validate_webhook_url(body.url):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid webhook URL. Must be an allowed HTTPS domain"
+                " and not resolve to an internal IP."
+            )
+        )
 
     # Temporary configuration dict containing the target webhook
     temp_config = {
@@ -1105,3 +1147,41 @@ async def websocket_pipeline_progress(websocket: WebSocket, run_id: str):
         except Exception:
             pass
 
+@app.get("/api/v1/compliance/report/{run_id}", tags=["Compliance"])
+def get_compliance_report(run_id: str):
+    """Return a generated compliance report."""
+
+    results_dir = Path("results").resolve()
+    report_path = (results_dir / f"{run_id}_compliance_report.json").resolve()
+
+    try:
+        report_path.relative_to(results_dir)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid run id.",
+        ) from err
+
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Compliance report not found.",
+        )
+
+    return json.loads(report_path.read_text(encoding="utf-8"))
+
+@app.get("/api/v1/compliance/reports", tags=["Compliance"])
+def list_compliance_reports():
+    """List available compliance reports."""
+
+    reports = []
+
+    for report in Path("results").glob("*_compliance_report.json"):
+        reports.append(
+            {
+                "run_id": report.stem.replace("_compliance_report", ""),
+                "file": report.name,
+            }
+        )
+
+    return reports

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 # Only run if fastapi is installed
@@ -806,3 +809,29 @@ class TestDemoEndpoint:
             for w in ["resilient", "vulnerable"]
         )
 
+def test_get_compliance_report(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    results = Path("results")
+    results.mkdir(exist_ok=True)
+
+    report = {
+        "generated_at": "today",
+        "model": {"name": "demo"},
+    }
+
+    with open(results / "run123_compliance_report.json", "w") as f:
+        json.dump(report, f)
+
+    response = client.get("/api/v1/compliance/report/run123")
+
+    assert response.status_code == 200
+    assert response.json()["model"]["name"] == "demo"
+
+
+def test_missing_compliance_report(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    response = client.get("/api/v1/compliance/report/does_not_exist")
+
+    assert response.status_code == 404
