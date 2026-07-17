@@ -17,9 +17,7 @@ from nightmarenet.utils.validation import validate_strength
 logger = logging.getLogger(__name__)
 
 # Cache generators so the fallback MLM and per-cycle examples are reused.
-_LEARNED_CACHE: dict[
-    tuple[str, str, bool, int], LearnedAdversarialGenerator
-] = {}
+_LEARNED_CACHE: dict[tuple[str, str, bool, int], LearnedAdversarialGenerator] = {}
 
 
 def _get_learned_generator(
@@ -142,8 +140,16 @@ def inject_contradiction(text, strength=0.3) -> str:
 
             # Simple negation: insert "not" or flip key words
             negation_targets = {
-                "is", "are", "was", "were",
-                "will", "can", "has", "have", "does", "do",
+                "is",
+                "are",
+                "was",
+                "were",
+                "will",
+                "can",
+                "has",
+                "have",
+                "does",
+                "do",
             }
             inserted = False
             for i, w in enumerate(negated_words):

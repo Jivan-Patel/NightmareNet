@@ -132,9 +132,7 @@ class LearnedAdversarialGenerator:
             self._model.to(self.device)
             self._model.eval()
             self._available = True
-            logger.info(
-                "Loaded learned adversarial fallback model: %s", self.model_name
-            )
+            logger.info("Loaded learned adversarial fallback model: %s", self.model_name)
         except Exception as exc:
             logger.warning(
                 "Could not load adversarial fallback model '%s': %s. "
@@ -214,9 +212,7 @@ class LearnedAdversarialGenerator:
 
         avg_attention = torch.stack(attentions).mean(dim=(0, 1, 2))
         if avg_attention.dim() > 1:
-            avg_attention = avg_attention.mean(
-                dim=tuple(range(avg_attention.dim() - 1))
-            )
+            avg_attention = avg_attention.mean(dim=tuple(range(avg_attention.dim() - 1)))
 
         word_ids = self._word_ids(encoding, len(words))
         word_scores = [0.0] * len(words)
@@ -246,9 +242,7 @@ class LearnedAdversarialGenerator:
     def _gradient_analysis(self, text: str) -> _GradientAnalysis:
         """Compute ``grad(loss, embeddings).norm(dim=-1)`` and word gradients."""
         if not self.gradient_available:
-            raise RuntimeError(
-                "A target model and tokenizer are required for gradient attacks"
-            )
+            raise RuntimeError("A target model and tokenizer are required for gradient attacks")
 
         import torch
         import torch.nn.functional as F  # noqa: N812
@@ -265,9 +259,7 @@ class LearnedAdversarialGenerator:
         encoding, words = self._tokenize_words(tokenizer, text)
         device = embedding_layer.weight.device
         model_inputs = {
-            key: value.to(device)
-            for key, value in encoding.items()
-            if key != "input_ids"
+            key: value.to(device) for key, value in encoding.items() if key != "input_ids"
         }
         input_ids = encoding["input_ids"].to(device)
         embeddings = embedding_layer(input_ids).detach().requires_grad_(True)
@@ -305,9 +297,7 @@ class LearnedAdversarialGenerator:
                             labels.reshape(-1),
                         )
                 else:
-                    raise ValueError(
-                        "target_model logits must be rank 2 or 3 for learned attacks"
-                    )
+                    raise ValueError("target_model logits must be rank 2 or 3 for learned attacks")
 
                 gradients = torch.autograd.grad(
                     loss,
@@ -378,9 +368,7 @@ class LearnedAdversarialGenerator:
         model = self._unwrap_model(self.target_model)
         tokenizer = self._gradient_tokenizer
         if tokenizer is None:
-            raise RuntimeError(
-                "A target tokenizer is required for gradient substitutions"
-            )
+            raise RuntimeError("A target tokenizer is required for gradient substitutions")
         embedding_matrix = model.get_input_embeddings().weight.detach()
         words = text.split()
         special_ids = set(getattr(tokenizer, "all_special_ids", []) or [])
@@ -389,10 +377,7 @@ class LearnedAdversarialGenerator:
             if word_index >= len(words):
                 continue
             gradient = analysis.gradients[word_index].to(embedding_matrix.device)
-            if (
-                not torch.isfinite(gradient).all()
-                or float(gradient.norm().item()) == 0.0
-            ):
+            if not torch.isfinite(gradient).all() or float(gradient.norm().item()) == 0.0:
                 continue
 
             scores = torch.mv(embedding_matrix, gradient)
@@ -450,17 +435,13 @@ class LearnedAdversarialGenerator:
 
         tokenizer = self._tokenizer
         if tokenizer is None:
-            logger.debug(
-                "Fallback tokenizer unavailable; returning the original text."
-            )
+            logger.debug("Fallback tokenizer unavailable; returning the original text.")
             return text
 
         mask_token = tokenizer.mask_token
         mask_token_id = tokenizer.mask_token_id
         if mask_token is None or mask_token_id is None:
-            logger.debug(
-                "Fallback tokenizer has no mask token; returning the original text."
-            )
+            logger.debug("Fallback tokenizer has no mask token; returning the original text.")
             return text
 
         for index in token_indices:
@@ -475,22 +456,16 @@ class LearnedAdversarialGenerator:
                 truncation=True,
                 max_length=512,
             )
-            tokens = {
-                key: value.to(self.device) for key, value in encoding.items()
-            }
+            tokens = {key: value.to(self.device) for key, value in encoding.items()}
             with torch.no_grad():
                 outputs = self._model(**tokens)
 
-            mask_positions = (
-                tokens["input_ids"] == mask_token_id
-            ).nonzero(as_tuple=True)
+            mask_positions = (tokens["input_ids"] == mask_token_id).nonzero(as_tuple=True)
             if len(mask_positions[1]) == 0:
                 continue
 
             logits = outputs.logits[0, mask_positions[1][0].item()]
-            candidate_ids = logits.topk(
-                min(10, logits.numel())
-            ).indices.tolist()
+            candidate_ids = logits.topk(min(10, logits.numel())).indices.tolist()
             for candidate_id in candidate_ids:
                 candidate = tokenizer.decode(
                     [candidate_id],
@@ -506,9 +481,7 @@ class LearnedAdversarialGenerator:
 
         return " ".join(words)
 
-    def _cache_key(
-        self, text: str, strength: float, strategy: str
-    ) -> tuple[int, str, float, str]:
+    def _cache_key(self, text: str, strength: float, strategy: str) -> tuple[int, str, float, str]:
         return (self.cycle_id, text, round(float(strength), 8), strategy)
 
     def _cache_result(self, key: tuple[int, str, float, str], value: str) -> None:
