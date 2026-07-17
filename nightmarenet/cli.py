@@ -165,8 +165,14 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         output_dir = args.output if args.output else "./results"
         no_cache = getattr(args, "no_cache", False)
 
-        orchestrator = EnsembleOrchestrator(args.config)
-        results = orchestrator.run(timeout_seconds=300, output_dir=output_dir, no_cache=no_cache)
+        try:
+            orchestrator = EnsembleOrchestrator(args.config)
+            results = orchestrator.run(
+                timeout_seconds=300, output_dir=output_dir, no_cache=no_cache
+            )
+        except (FileNotFoundError, OSError) as e:
+            print(f"Error: could not load benchmark config: {e}", file=sys.stderr)
+            return 1
 
         # Analyze pareto frontier
         pareto_front = get_pareto_frontier(results["models_summary"])
@@ -177,12 +183,10 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         results["degradation_curves"] = curves
 
         # We want json, csv, latex
-        # format_all reads 'models_summary' from results dict for table generation
         format_all(results, formats=["json", "csv", "latex"], output_dir=output_dir)
         print(f"\nResults saved to {output_dir}")
 
         return 0
-
     import yaml
 
     from nightmarenet.evaluation.evaluator import Evaluator

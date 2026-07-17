@@ -317,4 +317,3 @@ class TestHuggingFaceIngestion:
 
         ds = ingestor.from_huggingface("glue", subset="sst2", streaming=True)
         assert ds == mock_ds
-

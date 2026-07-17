@@ -84,7 +84,9 @@ def main():
         else:
             status_str = "❌ Fail"
 
-        lines.append(f"| {display_metric} | {main_str} | {pr_str} | {delta_str} | {status_str} |")
+        lines.append(
+            f"| {display_metric} | {main_str} | {pr_str} | {delta_str} | {status_str} |"
+        )
 
     lines.append("")
     if exceeds_threshold:

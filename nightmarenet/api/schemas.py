@@ -351,4 +351,3 @@ class TestWebhookRequest(BaseModel):
         default="run_complete",
         description="Event type to test: run_complete, regression_detected, alert, deploy",
     )
-

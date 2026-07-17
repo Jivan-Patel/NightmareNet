@@ -202,6 +202,12 @@ class VisionDistortionRegistry:
         self._discover_plugins()
 
     def _register_builtins(self) -> None:
+        from nightmarenet.distortions.vision.dream import (
+            ColorJitter,
+            GaussianBlur,
+            GeometricTransform,
+            JPEGCompression,
+        )
         from nightmarenet.distortions.vision.gaussian_noise import GaussianNoise
 
         noise_engine = GaussianNoise()
@@ -214,6 +220,23 @@ class VisionDistortionRegistry:
                 "source": "builtin",
             },
         )
+
+        for engine in [
+            ColorJitter(),
+            GeometricTransform(),
+            GaussianBlur(),
+            JPEGCompression(),
+        ]:
+            self.register(
+                engine.name,
+                engine.distort,
+                metadata={
+                    "phase": engine.phase,
+                    "description": engine.description,
+                    "source": "builtin",
+                },
+            )
+
 
     def _discover_plugins(self) -> None:
         """Discover and load third-party vision distortion plugins via entry points."""

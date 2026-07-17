@@ -336,7 +336,7 @@ and reachable via `nightmarenet train --config configs/benchmark_sst2_gpu.yaml`.
 
 ### 5.4 Transfer Learning Efficiency
 
-To validate that NightmareNet learns genuinely robust representations rather than task-specific hacks, we developed a Robustness Transfer Learning pipeline. By extracting the base representations (backbone) of a fully trained NightmareNet model, we register it as a "robust foundation model." We then transfer-fine-tune this foundation on a new downstream task (e.g., AG News) by instantiating a fresh task-specific classification head and employing a layer-freezing curriculum. 
+To validate that NightmareNet learns genuinely robust representations rather than task-specific hacks, we developed a Robustness Transfer Learning pipeline. By extracting the base representations (backbone) of a fully trained NightmareNet model, we register it as a "robust foundation model." We then transfer-fine-tune this foundation on a new downstream task (e.g., AG News) by instantiating a fresh task-specific classification head and employing a layer-freezing curriculum.
 
 We measure transfer viability using the **Transfer Ratio**: the ratio of the transferred model's robustness to the robustness of a model trained via a full cycle on the target task.
 
@@ -411,7 +411,7 @@ This is an early-stage validation; we explicitly note:
    `TextAttack` library is straightforward and is the v2 priority.
 4. **Single cycle (and only half of it).** The full Wake → Dream → Nightmare →
    Compress cycle with `num_cycles ≥ 3` (the sleep-inspired core thesis) is
-   implemented in `Pipeline.run()` and validated by 522+ unit tests, but is not
+   implemented in `Pipeline.run()` and validated by 660+ unit tests, but is not
    yet benchmark-measured.
 5. **Single dataset / model.** SST-2 / DistilBERT only. Generalization to
    AG News, IMDB, BERT-base, GPT-2-class models is on the v2 roadmap.
