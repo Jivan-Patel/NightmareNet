@@ -28,8 +28,8 @@
 **The first platform that actively improves model robustness through biologically-grounded training cycles.**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-660%2B%20passing-brightgreen)](#testing)
+[![CI](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml/badge.svg)](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-558%2B%20passing-brightgreen)](#testing)
 [![Python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)](#installation)
 
 *Wake. Dream. Nightmare. Compress. Repeat.*
