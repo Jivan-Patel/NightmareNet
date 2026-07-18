@@ -111,9 +111,7 @@ class LearnedAdversarialGenerator:
         """Return cached generated examples, optionally restricted to one cycle."""
         # Cache keys are (cycle_id, model_id, text, strength, strategy).
         return [
-            value
-            for key, value in self._cache.items()
-            if cycle_id is None or key[0] == cycle_id
+            value for key, value in self._cache.items() if cycle_id is None or key[0] == cycle_id
         ]
 
     def clear_cache(self) -> None:
