@@ -4,11 +4,11 @@ import json
 import os
 from unittest import mock
 
-import nightmarenet
 import pytest
 import torch
 import torch.nn as nn
 
+import nightmarenet
 from nightmarenet.distributed.checkpoint import (
     AtomicCheckpointer,
     check_version_compatibility,
