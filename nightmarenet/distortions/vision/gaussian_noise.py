@@ -30,9 +30,9 @@ class GaussianNoise(ImageDistortion):
         # but bounded noise at strength 1.0.
         std = strength / 2.0
 
-        noise = torch.randn(
-            image.shape, generator=gen, device=image.device, dtype=image.dtype
-        ) * std
+        noise = (
+            torch.randn(image.shape, generator=gen, device=image.device, dtype=image.dtype) * std
+        )
         distorted = image + noise
 
         return torch.clamp(distorted, 0.0, 1.0)

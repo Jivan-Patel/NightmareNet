@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from datasets import Dataset, IterableDataset
 
@@ -161,9 +161,7 @@ class DreamDatasetGenerator:
             os.makedirs(save_path, exist_ok=True)
             dream_data.save_to_disk(save_path)
         except OSError as exc:
-            raise OSError(
-                f"Failed to save dream data to '{save_path}': {exc}"
-            ) from exc
+            raise OSError(f"Failed to save dream data to '{save_path}': {exc}") from exc
         logger.info("Dream data saved to %s", save_path)
         return dream_data
 
@@ -194,6 +192,9 @@ class NightmareDatasetGenerator:
         strength_schedule: str = "uniform",
         strength_min: float = 0.3,
         strength_max: float = 0.9,
+        target_model: Optional[Any] = None,
+        target_tokenizer: Optional[Any] = None,
+        cycle_id: int = 0,
     ):
         self.strength = validate_strength(strength, "strength")
         self.text_column = text_column
@@ -202,6 +203,9 @@ class NightmareDatasetGenerator:
         self.strength_schedule = strength_schedule
         self.strength_min = validate_strength(strength_min, "strength_min")
         self.strength_max = validate_strength(strength_max, "strength_max")
+        self.target_model = target_model
+        self.target_tokenizer = target_tokenizer
+        self.cycle_id = int(cycle_id)
 
         if self.strength_schedule not in ("uniform", "linear", "cosine", "step"):
             raise ValueError(
@@ -216,9 +220,30 @@ class NightmareDatasetGenerator:
             )
 
         if self.strength_min > self.strength_max:
-            logger.warning(
-                "strength_min > strength_max; schedule will decrease over batch."
-            )
+            logger.warning("strength_min > strength_max; schedule will decrease over batch.")
+
+    @property
+    def uses_gradient_learned(self) -> bool:
+        """Return whether model-aware learned distortion is enabled."""
+        adversarial = self.config.get("adversarial", {})
+        return (
+            adversarial.get("learned", 0.0) > 0.0
+            and adversarial.get("learned_strategy", "attention") == "gradient"
+        )
+
+    def set_target_model(
+        self,
+        target_model: Optional[Any],
+        target_tokenizer: Optional[Any] = None,
+    ) -> None:
+        """Set the current target model used by model-aware distortions."""
+        self.target_model = target_model
+        if target_tokenizer is not None:
+            self.target_tokenizer = target_tokenizer
+
+    def set_cycle(self, cycle_id: int) -> None:
+        """Set the current training cycle for learned-example caching."""
+        self.cycle_id = int(cycle_id)
 
     def _compute_strengths(self, num_samples: int) -> list[float]:
         """Compute per-sample distortion strengths based on schedule.
@@ -306,7 +331,12 @@ class NightmareDatasetGenerator:
         # Apply adversarial distortions (unique to nightmare phase)
         adversarial_config = self.config.get("adversarial", None)
         result = apply_adversarial_distortions(
-            result, strength=actual_strength, config=adversarial_config
+            result,
+            strength=actual_strength,
+            config=adversarial_config,
+            target_model=self.target_model,
+            target_tokenizer=self.target_tokenizer,
+            cycle_id=self.cycle_id,
         )
 
         return {**example, self.text_column: result}
@@ -402,9 +432,7 @@ class NightmareDatasetGenerator:
             os.makedirs(save_path, exist_ok=True)
             nightmare_data.save_to_disk(save_path)
         except OSError as exc:
-            raise OSError(
-                f"Failed to save nightmare data to '{save_path}': {exc}"
-            ) from exc
+            raise OSError(f"Failed to save nightmare data to '{save_path}': {exc}") from exc
         logger.info("Nightmare data saved to %s", save_path)
         return nightmare_data
 

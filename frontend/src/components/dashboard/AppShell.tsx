@@ -54,7 +54,7 @@ export function AppShell({
             onOpenCommandPalette={() => setPaletteOpen(true)}
             apiStatus={apiStatus}
           />
-          <main className="flex-1 overflow-x-hidden px-4 py-5 sm:px-6 sm:py-6">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-x-hidden px-4 py-5 outline-none sm:px-6 sm:py-6">
             {children}
           </main>
         </div>

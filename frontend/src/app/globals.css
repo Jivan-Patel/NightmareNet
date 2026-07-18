@@ -74,6 +74,32 @@ body {
   mix-blend-mode: multiply;
 }
 
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="link"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 3px solid #22d3ee;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 /*            GLASSMORPHISM UTILITIES            */
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -163,7 +189,7 @@ body {
 }
 
 /* Demo section light mode fixes */
-.light .text-muted { color: #475569; }
+.light .text-slate-400 { color: #475569; }
 .light .text-text-dim { color: #334155; }
 .light .text-text { color: #0f172a; }
 

@@ -83,12 +83,18 @@ class DistortionRegistry:
                 cls = ep.load()
                 instance = cls()
                 if isinstance(instance, BaseDistortion) and instance.validate():
-                    self.register(instance.name, instance.distort, metadata={
-                        'phase': instance.phase,
-                        'description': instance.description,
-                        'source': 'plugin',
-                        'package': ep.dist.name if hasattr(ep, 'dist') and ep.dist else 'unknown',
-                    })
+                    self.register(
+                        instance.name,
+                        instance.distort,
+                        metadata={
+                            "phase": instance.phase,
+                            "description": instance.description,
+                            "source": "plugin",
+                            "package": ep.dist.name
+                            if hasattr(ep, "dist") and ep.dist
+                            else "unknown",
+                        },
+                    )
                     logger.info(f"Loaded distortion plugin '{ep.name}' from {ep.value}")
             except Exception as e:
                 logger.warning(f"Failed to load distortion plugin '{ep.name}': {e}")
@@ -126,8 +132,7 @@ class DistortionRegistry:
     def list_engines(self) -> List[Dict[str, Any]]:
         """List all registered distortion engines with metadata."""
         return [
-            {"name": name, **self._metadata.get(name, {})}
-            for name in sorted(self._engines.keys())
+            {"name": name, **self._metadata.get(name, {})} for name in sorted(self._engines.keys())
         ]
 
     def list_engines_by_source(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -157,13 +162,19 @@ class DistortionRegistry:
             def my_distortion(text: str, strength: float, seed: int = None) -> str:
                 return text
         """
+
         def decorator(fn: DistortionFn) -> DistortionFn:
-            self.register(name, fn, metadata={
-                'phase': phase,
-                'description': description,
-                'source': 'custom',
-            })
+            self.register(
+                name,
+                fn,
+                metadata={
+                    "phase": phase,
+                    "description": description,
+                    "source": "custom",
+                },
+            )
             return fn
+
         return decorator
 
     @property
@@ -237,7 +248,6 @@ class VisionDistortionRegistry:
                 },
             )
 
-
     def _discover_plugins(self) -> None:
         """Discover and load third-party vision distortion plugins via entry points."""
         try:
@@ -256,12 +266,18 @@ class VisionDistortionRegistry:
                 cls = ep.load()
                 instance = cls()
                 if isinstance(instance, ImageDistortion) and instance.validate():
-                    self.register(instance.name, instance.distort, metadata={
-                        'phase': instance.phase,
-                        'description': instance.description,
-                        'source': 'plugin',
-                        'package': ep.dist.name if hasattr(ep, 'dist') and ep.dist else 'unknown',
-                    })
+                    self.register(
+                        instance.name,
+                        instance.distort,
+                        metadata={
+                            "phase": instance.phase,
+                            "description": instance.description,
+                            "source": "plugin",
+                            "package": ep.dist.name
+                            if hasattr(ep, "dist") and ep.dist
+                            else "unknown",
+                        },
+                    )
                     logger.info("Loaded vision distortion plugin '%s' from %s", ep.name, ep.value)
             except Exception as e:
                 logger.warning("Failed to load vision distortion plugin '%s': %s", ep.name, e)
@@ -299,8 +315,7 @@ class VisionDistortionRegistry:
     def list_engines(self) -> List[Dict[str, Any]]:
         """List all registered vision distortion engines with metadata."""
         return [
-            {"name": name, **self._metadata.get(name, {})}
-            for name in sorted(self._engines.keys())
+            {"name": name, **self._metadata.get(name, {})} for name in sorted(self._engines.keys())
         ]
 
     def list_engines_by_source(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -322,13 +337,19 @@ class VisionDistortionRegistry:
         description: str = "",
     ):
         """Decorator for registering vision distortion functions."""
+
         def decorator(fn: VisionDistortionFn) -> VisionDistortionFn:
-            self.register(name, fn, metadata={
-                'phase': phase,
-                'description': description,
-                'source': 'custom',
-            })
+            self.register(
+                name,
+                fn,
+                metadata={
+                    "phase": phase,
+                    "description": description,
+                    "source": "custom",
+                },
+            )
             return fn
+
         return decorator
 
     @property

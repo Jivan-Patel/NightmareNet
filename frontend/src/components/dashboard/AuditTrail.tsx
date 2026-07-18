@@ -152,7 +152,7 @@ export function AuditTrail() {
                 {e.kind}
               </Badge>
               <span className="font-mono text-[10px] text-slate-400">{e.id}</span>
-              <span className="text-[10px] text-slate-600">·</span>
+              <span className="text-[10px] text-slate-300">·</span>
               <span className="text-[10px] text-slate-400">{e.ts}</span>
               <span className="ml-auto font-mono text-[10px] text-slate-400">{e.actor}</span>
             </div>

@@ -39,6 +39,7 @@ def run_cli(args):
 
     except Exception:
         import traceback
+
         exit_code = 1
         f_err.write(traceback.format_exc())
 
@@ -46,14 +47,17 @@ def run_cli(args):
 
 
 # 1. Help tests for each subcommand
-@pytest.mark.parametrize("subcommand, keywords", [
-    ("train", ["train", "config"]),
-    ("evaluate", ["evaluate", "text", "strength"]),
-    ("benchmark", ["benchmark", "config"]),
-    ("distort", ["distort", "type", "strength", "text"]),
-    ("foundation", ["foundation"]),
-    ("transfer", ["transfer"]),
-])
+@pytest.mark.parametrize(
+    "subcommand, keywords",
+    [
+        ("train", ["train", "config"]),
+        ("evaluate", ["evaluate", "text", "strength"]),
+        ("benchmark", ["benchmark", "config"]),
+        ("distort", ["distort", "type", "strength", "text"]),
+        ("foundation", ["foundation"]),
+        ("transfer", ["transfer"]),
+    ],
+)
 def test_subcommand_help(subcommand, keywords):
     """Verifies that --help for each subcommand exits 0 and renders with keywords."""
     result = run_cli([subcommand, "--help"])
@@ -74,11 +78,14 @@ def test_main_help():
 
 
 # 3. Missing required arguments test
-@pytest.mark.parametrize("args", [
-    ["train"],
-    ["distort"],
-    ["foundation", "register"],
-])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["train"],
+        ["distort"],
+        ["foundation", "register"],
+    ],
+)
 def test_missing_required_args(args):
     result = run_cli(args)
 
@@ -94,12 +101,16 @@ def test_missing_required_args(args):
 # 4. Evaluate command happy path
 def test_evaluate_command_success():
     """Verifies evaluate command runs successfully with correct args and outputs valid JSON."""
-    result = run_cli([
-        "evaluate",
-        "--text", "test text input",
-        "--strengths", "0.3,0.5",
-        "--json",
-    ])
+    result = run_cli(
+        [
+            "evaluate",
+            "--text",
+            "test text input",
+            "--strengths",
+            "0.3,0.5",
+            "--json",
+        ]
+    )
     assert result.returncode == 0
 
     data = json.loads(result.stdout)

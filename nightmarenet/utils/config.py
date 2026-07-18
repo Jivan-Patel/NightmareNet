@@ -9,11 +9,46 @@ from __future__ import annotations
 import logging
 import os
 from copy import deepcopy
-from typing import Any
+from typing import Any, Union
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Compute the Levenshtein distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+
+    if len(s2) == 0:
+        return len(s1)
+
+    previous_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
+def _find_closest_key(key: str, candidates: list[str], max_distance: int = 2) -> Union[str, None]:
+    """Find the closest matching key from candidates using Levenshtein distance."""
+    closest = None
+    min_dist = max_distance + 1
+
+    for candidate in candidates:
+        dist = _levenshtein_distance(key, candidate)
+        if dist < min_dist:
+            min_dist = dist
+            closest = candidate
+
+    return closest if min_dist <= max_distance else None
 
 # Default configuration with all supported keys and their default values.
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -218,13 +253,9 @@ def validate_config(config: dict) -> list[str]:
         # Range check for numeric types
         if isinstance(value, (int, float)):
             if min_val is not None and value < min_val:
-                errors.append(
-                    f"Config '{dotted_key}' must be >= {min_val}, got {value}"
-                )
+                errors.append(f"Config '{dotted_key}' must be >= {min_val}, got {value}")
             if max_val is not None and value > max_val:
-                errors.append(
-                    f"Config '{dotted_key}' must be <= {max_val}, got {value}"
-                )
+                errors.append(f"Config '{dotted_key}' must be <= {max_val}, got {value}")
 
     webhooks = _get_nested(config, "notifications.webhooks")
     if webhooks is not None:
@@ -243,9 +274,7 @@ def validate_config(config: dict) -> list[str]:
                     errors.append(f"Config 'notifications.webhooks[{i}].url' must be a string")
                 if "events" in wh:
                     if not isinstance(wh["events"], list):
-                        errors.append(
-                            f"Config 'notifications.webhooks[{i}].events' must be a list"
-                        )
+                        errors.append(f"Config 'notifications.webhooks[{i}].events' must be a list")
                     else:
                         for j, ev in enumerate(wh["events"]):
                             if not isinstance(ev, str):
@@ -266,6 +295,24 @@ def validate_config(config: dict) -> list[str]:
                                 )
 
     return errors
+
+
+def _warn_unknown_keys(user_config: dict) -> None:
+    """Log warnings for unrecognized top-level configuration keys."""
+    valid_top_level_keys = set(DEFAULT_CONFIG.keys())
+    unknown_keys = set(user_config.keys()) - valid_top_level_keys
+
+    for unknown_key in unknown_keys:
+        key_str = str(unknown_key)
+        suggestion = _find_closest_key(key_str, list(valid_top_level_keys))
+        if suggestion:
+            logger.warning(
+                "Unknown config key '%s' - did you mean '%s'?",
+                key_str,
+                suggestion,
+            )
+        else:
+            logger.warning("Unknown config key '%s'", key_str)
 
 
 def load_config(path: str) -> dict:
@@ -298,9 +345,11 @@ def load_config(path: str) -> dict:
 
     if not isinstance(user_config, dict):
         raise ValueError(
-            f"Config file must contain a YAML mapping,"
-            f" got {type(user_config).__name__}"
+            f"Config file must contain a YAML mapping, got {type(user_config).__name__}"
         )
+
+    # Warn about unknown top-level keys
+    _warn_unknown_keys(user_config)
 
     # Merge with defaults
     config = _deep_merge(DEFAULT_CONFIG, user_config)

@@ -150,6 +150,28 @@ class TestPipelineMetrics:
         assert d["has_report"] is False
         assert isinstance(d["history"], list)
 
+    def test_ingest_failure_raises_pipeline_phase_error(self, minimal_config, monkeypatch):
+        """Unexpected (non-ValueError) ingestion errors should surface as PipelinePhaseError."""
+        from nightmarenet.data.ingest import DataIngestor
+        from nightmarenet.exceptions import PipelinePhaseError
+
+        def _boom(self, *args, **kwargs):
+            raise RuntimeError("simulated ingestion failure")
+
+        monkeypatch.setattr(DataIngestor, "from_text_content", _boom)
+
+        pipe = Pipeline(minimal_config)
+        with pytest.raises(PipelinePhaseError) as exc_info:
+            pipe.ingest(text_content="placeholder text content for the test")
+
+        assert exc_info.value.phase == "ingest"
+
+    def test_ingest_validation_error_stays_value_error(self, minimal_config):
+        """The existing 'no source provided' validation error must stay a plain ValueError."""
+        pipe = Pipeline(minimal_config)
+        with pytest.raises(ValueError):
+            pipe.ingest()
+
 
 class TestPipelineEventCallback:
     """Tests that events are emitted at each stage."""
@@ -280,12 +302,14 @@ class TestEvalSplit:
         """Return a minimal HuggingFace Dataset with `n` text samples."""
         from datasets import Dataset
 
-        return Dataset.from_dict({
-            "text": [
-                f"Sample {i}: This is a valid training sentence with enough text."
-                for i in range(n)
-            ]
-        })
+        return Dataset.from_dict(
+            {
+                "text": [
+                    f"Sample {i}: This is a valid training sentence with enough text."
+                    for i in range(n)
+                ]
+            }
+        )
 
     def test_eval_split_creates_held_out_dataset(self, minimal_config):
         """With a large enough dataset, prepare() should split into train and eval."""

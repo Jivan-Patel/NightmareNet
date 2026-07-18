@@ -189,7 +189,6 @@ function RowActionsMenu({ row, toast }: RowActionsMenuProps) {
         "hover:opacity-100 focus-within:opacity-100",
         "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100",
       ].join(" ")}
-      onClick={(e) => e.stopPropagation()}
     >
       <button
         type="button"
@@ -408,7 +407,7 @@ export function ExperimentList({
       align: "right",
       cell: (r) =>
         r.robustness === 0 ? (
-          <span className="text-slate-600">—</span>
+          <span className="text-slate-300">—</span>
         ) : (
           <span
             className={[

@@ -68,7 +68,10 @@ distortion:
     cross_domain: 0.2
     misleading_context: 0.2
     learned: 0.0                        # Weight for learned adversarial (0 = disabled)
-    learned_model: "distilbert-base-uncased"  # MLM model for learned adversarial
+    learned_model: "distilbert-base-uncased"  # Fallback MLM for attention strategy
+    learned_strategy: "gradient"       # "gradient" (target-aware) | "attention" (legacy)
+    learned_cache: true                # Cache examples within/across training cycles
+    learned_seed: 42                   # Deterministic fallback and cache seed
 
 # Compression configuration
 compression:

@@ -88,7 +88,7 @@ services:
       # uncomment once nightmarenet_server/ lands and actually consumes them.
       # NIGHTMARENET_DATABASE_URL: ${NIGHTMARENET_DATABASE_URL:-postgresql+psycopg://nightmare:nightmare@db:5432/nightmarenet}
       # NIGHTMARENET_REDIS_URL: ${NIGHTMARENET_REDIS_URL:-redis://redis:6379/0}
-      NIGHTMARENET_CORS_ORIGINS: ${NIGHTMARENET_CORS_ORIGINS:-*}
+      NIGHTMARENET_CORS_ORIGINS: ${NIGHTMARENET_CORS_ORIGINS:-http://localhost:3000}
       NIGHTMARENET_LOG_LEVEL: ${NIGHTMARENET_LOG_LEVEL:-info}
     ports:
       - "${API_PORT:-8000}:8000"

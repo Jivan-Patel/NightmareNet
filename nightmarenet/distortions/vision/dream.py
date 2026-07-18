@@ -58,9 +58,7 @@ class ColorJitter(ImageDistortion):
         if distorted.shape[0] == 3:
             s_factor = rand_uniform(max(0.0, 1.0 - strength), 1.0 + strength)
             # Grayscale using standard luma weights
-            luma = (
-                0.299 * distorted[0] + 0.587 * distorted[1] + 0.114 * distorted[2]
-            ).unsqueeze(0)
+            luma = (0.299 * distorted[0] + 0.587 * distorted[1] + 0.114 * distorted[2]).unsqueeze(0)
             distorted = luma + s_factor * (distorted - luma)
 
         # 4. Hue shift (only for 3-channel RGB images)
@@ -197,10 +195,7 @@ class GaussianBlur(ImageDistortion):
         channels = image.shape[0]
 
         # Reshape 2D kernel for depthwise conv2d: (channels, 1, K_H, K_W)
-        kernel_2d = (
-            kernel_2d.expand(channels, 1, kernel_size, kernel_size)
-            .to(dtype=image.dtype)
-        )
+        kernel_2d = kernel_2d.expand(channels, 1, kernel_size, kernel_size).to(dtype=image.dtype)
 
         padding = kernel_size // 2
         distorted = F.conv2d(
@@ -242,9 +237,7 @@ class JPEGCompression(ImageDistortion):
         compressed_pil = Image.open(buf)
 
         # Convert back to tensor
-        distorted = to_tensor(compressed_pil).to(
-            device=image.device, dtype=image.dtype
-        )
+        distorted = to_tensor(compressed_pil).to(device=image.device, dtype=image.dtype)
 
         # Ensure correct channel dimension (e.g. if conversion dropped channels)
         if distorted.shape[0] != image.shape[0]:

@@ -55,7 +55,7 @@ export function RobustnessRadar() {
       }
     >
       <div className="flex flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Robustness radar">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="group" aria-label="Robustness radar">
           <defs>
             <radialGradient id="rad-grad" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="var(--color-neural)" stopOpacity="0.04" />
@@ -129,7 +129,7 @@ export function RobustnessRadar() {
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[11px]">
                   <span className="font-mono text-slate-100">{h}</span>
-                  <span className="text-slate-600">vs</span>
+                  <span className="text-slate-300">vs</span>
                   <span className="font-mono text-slate-400">{b}</span>
                 </div>
               </div>

@@ -26,8 +26,9 @@ def load_source_sentences():
         "Cross-validation prevents predictive over-fitting on skewed distributions.",
         "Stochastic processes model empirical fluctuations within dynamic inputs.",
         "Continuous integration pipelines ensure systematic compilation reliability.",
-        "Zero-knowledge proofs validate assertions without exposing source metadata."
+        "Zero-knowledge proofs validate assertions without exposing source metadata.",
     ]
+
 
 def generate_evaluation_dataset(output_dir="data/human_eval"):
     random.seed(42)
@@ -44,17 +45,16 @@ def generate_evaluation_dataset(output_dir="data/human_eval"):
                 sample_id = str(uuid.uuid4())[:8]
                 distorted_text = f"[{engine}@{strength}] {sentence}"
 
-                blinded_records.append({
-                    "sample_id": sample_id,
-                    "distorted_text": distorted_text
-                })
+                blinded_records.append({"sample_id": sample_id, "distorted_text": distorted_text})
 
-                master_mapping.append({
-                    "sample_id": sample_id,
-                    "original_text": sentence,
-                    "engine": engine,
-                    "strength": strength
-                })
+                master_mapping.append(
+                    {
+                        "sample_id": sample_id,
+                        "original_text": sentence,
+                        "engine": engine,
+                        "strength": strength,
+                    }
+                )
 
     random.shuffle(blinded_records)
 
@@ -100,13 +100,15 @@ def generate_evaluation_dataset(output_dir="data/human_eval"):
             nat_score = max(1, min(5, base_nat + random.choice(noise_choices)))
             adv_score = max(1, min(5, base_adv + random.choice(noise_choices)))
 
-            response_records.append({
-                "annotator_id": annotator,
-                "sample_id": s_id,
-                "semantic_score": sem_score,
-                "naturalness_score": nat_score,
-                "adversarial_score": adv_score
-            })
+            response_records.append(
+                {
+                    "annotator_id": annotator,
+                    "sample_id": s_id,
+                    "semantic_score": sem_score,
+                    "naturalness_score": nat_score,
+                    "adversarial_score": adv_score,
+                }
+            )
 
     responses_path = os.path.join(output_dir, "raw_responses.csv")
     with open(responses_path, "w", newline="", encoding="utf-8") as f:
@@ -115,7 +117,7 @@ def generate_evaluation_dataset(output_dir="data/human_eval"):
             "sample_id",
             "semantic_score",
             "naturalness_score",
-            "adversarial_score"
+            "adversarial_score",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -125,6 +127,7 @@ def generate_evaluation_dataset(output_dir="data/human_eval"):
         f"Successfully populated {output_dir}/raw_responses.csv "
         f"with {len(response_records)} rater entries."
     )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate human evaluation dataset")

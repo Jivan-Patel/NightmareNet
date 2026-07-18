@@ -432,6 +432,31 @@ Only request review (`@Adit-Jain-srm`) when ALL of the following are true:
 
 Do NOT request review with failing CI, unresolved bot comments, or unchecked boxes. Premature review requests waste maintainer time and will be dismissed without reading the code.
 
+### CI failed on files you didn't touch?
+
+PR checks run against a **merge of your branch with current `main`** (GitHub's
+`refs/pull/N/merge`), not your branch alone. If `main` itself is broken, every
+open PR turns red — including yours — on code you never changed.
+
+Before debugging, triage in this order:
+
+1. **Check the failing test's file path.** Is it inside your diff
+   (`git diff origin/main --stat`)? If not, it's likely inherited from `main`.
+2. **Check for an open [`[CI]: main branch is failing`](../../issues?q=is%3Aissue+is%3Aopen+label%3Aci-status) issue.**
+   If one exists, `main` is known-red. Wait for it to close — do NOT try to fix
+   `main`'s breakage inside your PR.
+3. **Check `main`'s latest [CI runs](../../actions/workflows/ci.yml?query=branch%3Amain).**
+   If the newest run on `main` is red with the same failure, same conclusion.
+4. **Once `main` is green again**, refresh your PR: merge `main` into your
+   branch (or rebase) and push, or click **Update branch** on the PR page.
+   Note: the **Re-run jobs** button re-tests the *same* merge snapshot
+   (GitHub reuses the original `GITHUB_SHA`), so it will NOT pick up the
+   fixed `main` — you must update the branch to get a fresh merge commit.
+
+If none of the above applies and the failure persists on files outside your
+diff, comment on your PR with the failing test name and your local
+verification (as much of `make check` as applies) — a maintainer will triage.
+
 ---
 
 ## ECSoC'26 Contributors

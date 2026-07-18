@@ -42,14 +42,16 @@ class WakePhase:
         config: dict,
         device: Union[str, torch.device] = "cpu",
         scaler: Optional[torch.amp.GradScaler] = None,
+        model_type: str = "causal_lm",
         callback_manager: Optional[CallbackManager] = None,
         lr_scheduler=None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.config = config
-        self.device = device
+        self.device = device if isinstance(device, torch.device) else torch.device(device)
         self.scaler = scaler
+        self.model_type = model_type
         self.callback_manager = callback_manager
         self.lr_scheduler = lr_scheduler
         self.max_grad_norm: float = config.get("max_grad_norm", 1.0)
@@ -93,9 +95,14 @@ class WakePhase:
             progress = tqdm(dataloader, desc=f"Wake Phase - Epoch {epoch + 1}/{num_epochs}")
             for step, batch in enumerate(progress):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
-
+                # Only causal LM needs labels=input_ids.
+                # Sequence classification already has batch["labels"].
+                if self.model_type != "seq_classification":
+                    batch["labels"] = batch["input_ids"]
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = self.model(**batch, labels=batch.get("input_ids"))
+                    outputs = self.model(
+                        **batch,
+                    )
                     loss = outputs.loss / self.gradient_accumulation_steps
 
                 if math.isnan(loss.item()) or math.isinf(loss.item()):
@@ -177,6 +184,7 @@ class DreamPhase:
         reference_model: Optional[torch.nn.Module] = None,
         kl_weight: float = 0.1,
         scaler: Optional[torch.amp.GradScaler] = None,
+        model_type: str = "causal_lm",
         callback_manager: Optional[CallbackManager] = None,
         lr_scheduler=None,
     ) -> None:
@@ -190,6 +198,7 @@ class DreamPhase:
         self.lr_scheduler = lr_scheduler
         self.max_grad_norm = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
+        self.model_type = model_type
         self.callback_manager = callback_manager
 
     def _compute_kl_loss(
@@ -260,8 +269,10 @@ class DreamPhase:
             for step, batch in enumerate(progress):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
+                if self.model_type != "seq_classification":
+                    batch["labels"] = batch["input_ids"]
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = self.model(**batch, labels=batch.get("input_ids"))
+                    outputs = self.model(**batch)
                     loss = outputs.loss / self.gradient_accumulation_steps
 
                 if math.isnan(loss.item()) or math.isinf(loss.item()):
@@ -355,6 +366,7 @@ class NightmarePhase:
         device: Union[str, torch.device] = "cpu",
         lr_multiplier: float = 2.0,
         scaler: Optional[torch.amp.GradScaler] = None,
+        model_type: str = "causal_lm",
         lr_scheduler=None,
         callback_manager: Optional[CallbackManager] = None,
     ) -> None:
@@ -370,12 +382,11 @@ class NightmarePhase:
         self.scaler = scaler
         self.max_grad_norm = config.get("max_grad_norm", 1.0)
         self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
+        self.model_type = model_type
 
     def _save_lr(self) -> dict:
         """Save current learning rates and scheduler base_lrs."""
-        state = {
-            "optimizer_lrs": [pg["lr"] for pg in self.optimizer.param_groups]
-        }
+        state = {"optimizer_lrs": [pg["lr"] for pg in self.optimizer.param_groups]}
         if self.lr_scheduler is not None and hasattr(self.lr_scheduler, "base_lrs"):
             state["scheduler_base_lrs"] = list(self.lr_scheduler.base_lrs)
         return state
@@ -401,9 +412,7 @@ class NightmarePhase:
             param_group["lr"] *= multiplier
         # Also scale scheduler base_lrs so step() doesn't override
         if self.lr_scheduler is not None and hasattr(self.lr_scheduler, "base_lrs"):
-            self.lr_scheduler.base_lrs = [
-                lr * multiplier for lr in self.lr_scheduler.base_lrs
-            ]
+            self.lr_scheduler.base_lrs = [lr * multiplier for lr in self.lr_scheduler.base_lrs]
 
     def run(self, dataloader: DataLoader, num_epochs: int = 1) -> dict:
         """Run the nightmare phase (adversarial training).
@@ -453,8 +462,10 @@ class NightmarePhase:
                 for step, batch in enumerate(progress):
                     batch = {k: v.to(self.device) for k, v in batch.items()}
 
+                    if self.model_type != "seq_classification":
+                        batch["labels"] = batch["input_ids"]
                     with torch.amp.autocast("cuda", enabled=use_amp):
-                        outputs = self.model(**batch, labels=batch.get("input_ids"))
+                        outputs = self.model(**batch)
                         loss = outputs.loss / self.gradient_accumulation_steps
 
                     if math.isnan(loss.item()) or math.isinf(loss.item()):
@@ -532,6 +543,7 @@ class CompressionPhase:
         config: dict,
         device: Union[str, torch.device] = "cpu",
         scaler: Optional[torch.amp.GradScaler] = None,
+        model_type: str = "causal_lm",
         callback_manager: Optional[CallbackManager] = None,
         lr_scheduler=None,
     ) -> None:
@@ -539,6 +551,7 @@ class CompressionPhase:
         self.config = config
         self.device = device
         self.scaler = scaler
+        self.model_type = model_type
         self.callback_manager = callback_manager
         self.lr_scheduler = lr_scheduler
 
@@ -566,6 +579,7 @@ class CompressionPhase:
         teacher_model = None
         if distillation_enabled and dataloader is not None and optimizer is not None:
             import copy
+
             teacher_model = copy.deepcopy(self.model)
             teacher_model.eval()
             for param in teacher_model.parameters():
@@ -632,7 +646,9 @@ class CompressionPhase:
                     batch = {k: v.to(self.device) for k, v in batch.items()}
                     use_amp = self.scaler is not None
                     with torch.amp.autocast("cuda", enabled=use_amp):
-                        outputs = self.model(**batch, labels=batch.get("input_ids"))
+                        if self.model_type != "seq_classification":
+                            batch["labels"] = batch["input_ids"]
+                        outputs = self.model(**batch)
                         loss = outputs.loss
 
                     if math.isnan(loss.item()) or math.isinf(loss.item()):

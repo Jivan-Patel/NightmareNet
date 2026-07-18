@@ -316,7 +316,11 @@ def certify_sample(
             logger.warning(
                 "Certification budget clamped sample: requested n0=%d n=%d, "
                 "using n0=%d n=%d (budget=%d)",
-                n0, n, n0_actual, n_actual, certification_budget,
+                n0,
+                n,
+                n0_actual,
+                n_actual,
+                certification_budget,
             )
 
     encoded = tokenizer(text, truncation=True, max_length=max_length, return_tensors="pt")
@@ -364,7 +368,11 @@ def certify_sample(
     if p_a_lower <= 0.5:
         logger.debug(
             "Abstained: p_A=%.4f <= 0.5 (k=%d/%d, sigma=%.3f, alpha=%.4f)",
-            p_a_lower, k, n_actual, sigma, alpha,
+            p_a_lower,
+            k,
+            n_actual,
+            sigma,
+            alpha,
         )
         return CertificationResult(
             prediction=prediction,
@@ -455,10 +463,7 @@ def certify_dataset(
     if certification_budget_total is not None:
         base = certification_budget_total // len(dataset)
         remainder = certification_budget_total % len(dataset)
-        per_sample_budgets = [
-            base + 1 if i < remainder else base
-            for i in range(len(dataset))
-        ]
+        per_sample_budgets = [base + 1 if i < remainder else base for i in range(len(dataset))]
         logger.info(
             "certification_budget_total=%d over %d samples -> %d-%d forward passes/sample",
             certification_budget_total,
@@ -498,9 +503,7 @@ def certify_dataset(
     radii = [r.certified_radius for r in results]
     abstain_count = sum(1 for r in results if r.abstained)
     correctness = [
-      (r.correct is True) if not r.abstained else False
-      for r in results
-      if r.label is not None
+        (r.correct is True) if not r.abstained else False for r in results if r.label is not None
     ]
 
     return {

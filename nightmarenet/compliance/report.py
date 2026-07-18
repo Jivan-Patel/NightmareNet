@@ -27,12 +27,14 @@ def _sha256_file(path: str) -> str:
 
     return sha.hexdigest()
 
+
 def _config_hash(config: dict) -> str:
     """Generate deterministic hash of configuration."""
 
     payload = json.dumps(config, sort_keys=True).encode()
 
     return hashlib.sha256(payload).hexdigest()
+
 
 def _environment() -> dict:
     """Collect runtime environment information."""
@@ -49,6 +51,7 @@ def _environment() -> dict:
         "gpu": gpu,
     }
 
+
 def _eu_ai_mapping() -> dict:
     """Map generated evidence to EU AI Act Article 15."""
 
@@ -63,6 +66,7 @@ def _eu_ai_mapping() -> dict:
             ),
         },
     }
+
 
 def _nist_mapping() -> dict:
     """Map outputs to NIST AI RMF."""
@@ -85,6 +89,7 @@ def _nist_mapping() -> dict:
             "Reproducibility",
         ],
     }
+
 
 def _build_report(
     config: dict,
@@ -142,8 +147,8 @@ def _build_report(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "schema_version": "1.0",
         "model": {
-           "name": model_config.get("name"),
-           "type": model_config.get("type"),
+            "name": model_config.get("name"),
+            "type": model_config.get("type"),
         },
         "dataset": {
             "name": dataset_config.get("name"),
@@ -162,6 +167,7 @@ def _build_report(
     }
 
     return report
+
 
 def _generate_markdown(report: dict) -> str:
     """Generate a human-readable markdown compliance report."""
@@ -209,6 +215,7 @@ def _generate_markdown(report: dict) -> str:
             lines.append(f"- {item}")
 
     return "\n".join(lines)
+
 
 def generate_report(
     config: dict,

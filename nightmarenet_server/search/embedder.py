@@ -202,10 +202,7 @@ def document_from_orm(
         experiment_id=getattr(run, "experiment_id", ""),
         name=getattr(experiment, "name", "") if experiment else "",
         model=str(
-            config.get("model_name")
-            or config.get("model")
-            or config.get("model_type")
-            or ""
+            config.get("model_name") or config.get("model") or config.get("model_type") or ""
         ),
         status=getattr(run, "status", ""),
         phase=getattr(run, "phase", ""),

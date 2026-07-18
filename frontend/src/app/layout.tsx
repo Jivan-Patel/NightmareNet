@@ -1,21 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import { ThemeProvider } from "@/lib/theme";
+import SkipLink from "@/components/a11y/SkipLink";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -25,7 +12,8 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "https://frontend-aj5.vercel.app"
+    process.env.NEXT_PUBLIC_SITE_URL ||
+      "https://frontend-aj5.vercel.app"
   ),
 
   title: "NightmareNet — Autonomous AI Self-Improvement Platform",
@@ -74,16 +62,42 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
-      <body className="scanlines min-h-full flex flex-col bg-void text-text font-sans" suppressHydrationWarning>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('nightmarenet-theme');var d=document.documentElement;if(t==='light'){d.classList.add('light')}else{d.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}})()`,
-          }}
-        />
-        <ThemeProvider>{children}</ThemeProvider>
+      <body
+        className="scanlines min-h-full flex flex-col bg-void text-text font-sans"
+        suppressHydrationWarning
+      >
+        <Script
+          id="theme-initializer"
+          strategy="beforeInteractive"
+        >
+          {`
+            (function () {
+              try {
+                var theme = localStorage.getItem("nightmarenet-theme");
+                var root = document.documentElement;
+
+                if (theme === "light") {
+                  root.classList.add("light");
+                  root.classList.remove("dark");
+                } else {
+                  root.classList.add("dark");
+                  root.classList.remove("light");
+                }
+              } catch (error) {
+                document.documentElement.classList.add("dark");
+              }
+            })();
+          `}
+        </Script>
+
+        <SkipLink />
+
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

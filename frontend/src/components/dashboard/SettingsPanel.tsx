@@ -106,6 +106,7 @@ export function SettingsPanel() {
         <button
           type="button"
           role="switch"
+          aria-label="Toggle UI sounds"
           aria-checked={sounds.enabled}
           onClick={sounds.toggle}
           className={[
@@ -374,6 +375,7 @@ export function SettingsPanel() {
                           >
                             <input
                               type="checkbox"
+                              aria-label={`${ev.label} webhook event`}
                               checked={active}
                               onChange={() => {
                                 const newEvents = active

@@ -77,6 +77,7 @@ def _worker_init_fn(worker_id: int) -> None:
     import random
 
     import numpy as np
+
     worker_seed = (torch.initial_seed() + worker_id) % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
@@ -88,17 +89,20 @@ def _tokenize_dataset(
     text_column: str,
     max_length: int,
     batch_size: int,
+    label_column: Optional[str] = None,
 ) -> DataLoader:
     """Tokenize a dataset and return a DataLoader."""
 
     def tokenize_fn(examples):
-        return tokenizer(
+        tokenized = tokenizer(
             examples[text_column],
             truncation=True,
             padding="max_length",
             max_length=max_length,
-            return_tensors="pt",
         )
+        if label_column is not None and label_column in examples:
+            tokenized["labels"] = examples[label_column]
+        return tokenized
 
     if isinstance(dataset, IterableDataset):
         tokenized = dataset.map(
@@ -107,11 +111,7 @@ def _tokenize_dataset(
             remove_columns=dataset.column_names if dataset.column_names else [text_column],
         )
         tokenized = tokenized.with_format("torch")
-        return DataLoader(
-            tokenized,
-            batch_size=batch_size,
-            worker_init_fn=_worker_init_fn
-        )
+        return DataLoader(tokenized, batch_size=batch_size, worker_init_fn=_worker_init_fn)
 
     tokenized = dataset.map(
         tokenize_fn,
@@ -121,10 +121,7 @@ def _tokenize_dataset(
     )
     tokenized.set_format("torch")
     return DataLoader(
-        tokenized,
-        batch_size=batch_size,
-        shuffle=True,
-        worker_init_fn=_worker_init_fn
+        tokenized, batch_size=batch_size, shuffle=True, worker_init_fn=_worker_init_fn
     )
 
 
@@ -456,9 +453,7 @@ class Trainer:
 
             finetune_after_prune = self.compression_config.get("finetune_after_prune", True)
             finetune_epochs = (
-                self.compression_config.get("finetune_epochs", 1)
-                if finetune_after_prune
-                else 0
+                self.compression_config.get("finetune_epochs", 1) if finetune_after_prune else 0
             )
 
             def get_opt_steps(steps, accum):
@@ -479,6 +474,7 @@ class Trainer:
                 num_training_steps=total_steps,
             )
         elif lr_schedule != "none" and warmup_steps > 0:
+
             def warmup_lambda(current_step):
                 return min(1.0, current_step / warmup_steps)
 
@@ -608,15 +604,23 @@ class Trainer:
 
                 if cycle != last_cycle_for_strength:
                     last_cycle_for_strength = cycle
-                    if self.config.get("distortion", {}).get("schedule_across_cycles", False):
+                    distortion_config = self.config.get("distortion", {})
+                    schedule_across_cycles = distortion_config.get(
+                        "schedule_across_cycles",
+                        False,
+                    )
+                    regenerate_dream = False
+                    regenerate_nightmare = False
+                    cycle_strength = None
+
+                    if schedule_across_cycles:
                         num_cycles = self.training_config.get("num_cycles", 3)
-                        distortion_config = self.config.get("distortion", {})
                         strength_min = distortion_config.get("strength_min", 0.2)
                         strength_max = distortion_config.get("strength_max", 0.9)
 
                         if num_cycles > 1:
-                            diff = strength_max - strength_min
-                            cycle_strength = strength_min + diff * cycle / (num_cycles - 1)
+                            difference = strength_max - strength_min
+                            cycle_strength = strength_min + difference * cycle / (num_cycles - 1)
                         else:
                             cycle_strength = strength_max
 
@@ -625,20 +629,55 @@ class Trainer:
                             cycle + 1,
                             cycle_strength,
                         )
-
                         if dream_generator is not None:
                             dream_generator.strength = cycle_strength
+                            regenerate_dream = True
                         if nightmare_generator is not None:
                             nightmare_generator.strength = cycle_strength
+                            regenerate_nightmare = True
 
-                        text_column = self.config.get("dataset", {}).get("text_column", "text")
-                        max_length = self.config.get("model", {}).get("max_length", 128)
+                    if nightmare_generator is not None:
+                        if hasattr(nightmare_generator, "set_target_model"):
+                            nightmare_generator.set_target_model(
+                                self.model,
+                                self.tokenizer,
+                            )
+                        if hasattr(nightmare_generator, "set_cycle"):
+                            nightmare_generator.set_cycle(cycle)
+
+                        # Cycle 0 was generated during Pipeline.prepare(). Later cycles
+                        # must be regenerated with current weights for model-aware attacks.
+                        if cycle > 0 and getattr(
+                            nightmare_generator,
+                            "uses_gradient_learned",
+                            False,
+                        ):
+                            regenerate_nightmare = True
+
+                    if regenerate_dream or regenerate_nightmare:
+                        text_column = self.config.get("dataset", {}).get(
+                            "text_column",
+                            "text",
+                        )
+                        max_length = self.config.get("model", {}).get(
+                            "max_length",
+                            128,
+                        )
                         batch_size = self.training_config.get("batch_size", 8)
 
-                        if dream_generator is not None and dream_base_dataset is not None:
+                        if (
+                            regenerate_dream
+                            and dream_generator is not None
+                            and dream_base_dataset is not None
+                        ):
                             logger.info(
-                                "Regenerating dream dataset with strength %.4f",
-                                cycle_strength,
+                                "Regenerating dream dataset for cycle %d%s",
+                                cycle + 1,
+                                (
+                                    f" at strength {cycle_strength:.4f}"
+                                    if cycle_strength is not None
+                                    else ""
+                                ),
                             )
                             dream_data = dream_generator.generate(dream_base_dataset)
                             dream_dataloader = _tokenize_dataset(
@@ -649,10 +688,19 @@ class Trainer:
                                 batch_size,
                             )
 
-                        if nightmare_generator is not None and nightmare_base_dataset is not None:
+                        if (
+                            regenerate_nightmare
+                            and nightmare_generator is not None
+                            and nightmare_base_dataset is not None
+                        ):
                             logger.info(
-                                "Regenerating nightmare dataset with strength %.4f",
-                                cycle_strength,
+                                "Regenerating nightmare dataset for cycle %d%s",
+                                cycle + 1,
+                                (
+                                    f" at strength {cycle_strength:.4f}"
+                                    if cycle_strength is not None
+                                    else " with current target-model gradients"
+                                ),
                             )
                             nightmare_data = nightmare_generator.generate(nightmare_base_dataset)
                             nightmare_dataloader = _tokenize_dataset(
@@ -732,6 +780,7 @@ class Trainer:
                 if phase == "wake":
                     wake_runner = WakePhase(
                         model=phase_model,
+                        model_type=self.model_type,
                         optimizer=self.optimizer,
                         config=self.training_config,
                         device=self.device,
@@ -756,6 +805,7 @@ class Trainer:
                         reference_model=self.reference_model,
                         kl_weight=0.1,
                         scaler=self.scaler,
+                        model_type=self.model_type,
                         callback_manager=self.callback_manager,
                         lr_scheduler=self.lr_scheduler,
                     )
@@ -770,6 +820,7 @@ class Trainer:
                         device=self.device,
                         lr_multiplier=lr_multiplier,
                         scaler=self.scaler,
+                        model_type=self.model_type,
                         callback_manager=self.callback_manager,
                         lr_scheduler=self.lr_scheduler,
                     )
@@ -781,6 +832,7 @@ class Trainer:
                         config=self.compression_config,
                         device=self.device,
                         scaler=self.scaler,
+                        model_type=self.model_type,
                         callback_manager=self.callback_manager,
                         lr_scheduler=self.lr_scheduler,
                     )

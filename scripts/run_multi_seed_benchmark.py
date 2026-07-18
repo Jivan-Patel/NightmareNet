@@ -39,11 +39,16 @@ def run_benchmark_for_seed(seed: int, device: str, train_samples: int, eval_samp
     cmd = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "run_gpu_benchmark.py"),
-        "--seed", str(seed),
-        "--device", device,
-        "--train-samples", str(train_samples),
-        "--eval-samples", str(eval_samples),
-        "--output", str(out_file),
+        "--seed",
+        str(seed),
+        "--device",
+        device,
+        "--train-samples",
+        str(train_samples),
+        "--eval-samples",
+        str(eval_samples),
+        "--output",
+        str(out_file),
     ]
 
     subprocess.run(cmd, check=True)
@@ -58,6 +63,7 @@ def compute_stats(values: list[float]) -> tuple[float, float, float]:
     variance = sum((x - mean) ** 2 for x in values) / (n - 1)
     std = math.sqrt(variance)
     from scipy.stats import t as t_dist
+
     t_crit = t_dist.ppf(0.975, df=n - 1)
     ci = t_crit * (std / math.sqrt(n))
     return mean, std, ci
@@ -142,19 +148,19 @@ def update_paper_draft(summary: dict) -> None:
         content = content.replace(t_l, r_l)
 
     # 3. Add statistical test findings paragraph and update description numbers
-    clean_delta_pct = (n_clean['mean'] - b_clean['mean']) * 100
-    dist_delta_pct = (n_dist['mean'] - b_dist['mean']) * 100
+    clean_delta_pct = (n_clean["mean"] - b_clean["mean"]) * 100
+    dist_delta_pct = (n_dist["mean"] - b_dist["mean"]) * 100
 
     content = content.replace(
         "+4.0 and +7.95 absolute percentage points respectively",
         (
             f"{clean_delta_pct:+.1f} and {dist_delta_pct:+.2f} "
             "absolute percentage points respectively"
-        )
+        ),
     )
     content = content.replace(
         "shrinks by a quarter (0.162 → 0.123)",
-        f"decreases slightly ({b_drop['mean']:.4f} → {n_drop['mean']:.4f})"
+        f"decreases slightly ({b_drop['mean']:.4f} → {n_drop['mean']:.4f})",
     )
 
     sig_text_target = "(+13.64%) sits comfortably in the 10–30% target band of our specification."
@@ -184,6 +190,7 @@ def main() -> int:
     args = parser.parse_args()
 
     import torch
+
     if args.device == "cuda" and not torch.cuda.is_available():
         args.device = "cpu"
 
@@ -213,32 +220,19 @@ def main() -> int:
     # Headline stats
     summary = {
         "headline": {
-            "baseline_clean": dict(
-                zip(["mean", "std", "ci"], compute_stats(b_clean_vals))
-            ),
-            "nightmarenet_clean": dict(
-                zip(["mean", "std", "ci"], compute_stats(n_clean_vals))
-            ),
-            "baseline_avg_dist": dict(
-                zip(["mean", "std", "ci"], compute_stats(b_dist_vals))
-            ),
-            "nightmarenet_avg_dist": dict(
-                zip(["mean", "std", "ci"], compute_stats(n_dist_vals))
-            ),
+            "baseline_clean": dict(zip(["mean", "std", "ci"], compute_stats(b_clean_vals))),
+            "nightmarenet_clean": dict(zip(["mean", "std", "ci"], compute_stats(n_clean_vals))),
+            "baseline_avg_dist": dict(zip(["mean", "std", "ci"], compute_stats(b_dist_vals))),
+            "nightmarenet_avg_dist": dict(zip(["mean", "std", "ci"], compute_stats(n_dist_vals))),
             "baseline_robustness_drop": dict(
                 zip(["mean", "std", "ci"], compute_stats(b_drop_vals))
             ),
             "nightmarenet_robustness_drop": dict(
                 zip(["mean", "std", "ci"], compute_stats(n_drop_vals))
             ),
-            "relative_improvement": dict(
-                zip(["mean", "std", "ci"], compute_stats(rel_imp_vals))
-            ),
+            "relative_improvement": dict(zip(["mean", "std", "ci"], compute_stats(rel_imp_vals))),
         },
-        "per_strength": {
-            "dream": {},
-            "nightmare": {}
-        },
+        "per_strength": {"dream": {}, "nightmare": {}},
         "statistical_tests": {
             "clean_accuracy": {
                 "t_statistic": float(t_clean),
@@ -247,7 +241,7 @@ def main() -> int:
             "avg_distorted_accuracy": {
                 "t_statistic": float(t_dist),
                 "p_value": float(p_dist),
-            }
+            },
         },
         "raw_runs": [
             {
@@ -261,7 +255,7 @@ def main() -> int:
                     "clean_accuracy": n_c,
                     "avg_distorted_accuracy": n_d,
                     "robustness_drop": n_dr,
-                }
+                },
             }
             for seed, b_c, b_d, b_dr, n_c, n_d, n_dr in zip(
                 SEEDS,
@@ -272,7 +266,7 @@ def main() -> int:
                 n_dist_vals,
                 n_drop_vals,
             )
-        ]
+        ],
     }
 
     # Per-strength stats
@@ -287,7 +281,7 @@ def main() -> int:
 
             summary["per_strength"][d_type][s] = {
                 "baseline": {"mean": b_mean, "std": b_std, "ci": b_ci},
-                "nightmarenet": {"mean": n_mean, "std": n_std, "ci": n_ci}
+                "nightmarenet": {"mean": n_mean, "std": n_std, "ci": n_ci},
             }
 
     # Write summary
@@ -299,14 +293,14 @@ def main() -> int:
     update_paper_draft(summary)
 
     print("\n=== AGGREGATED BENCHMARK SUMMARY ===")
-    b_clean_m = summary['headline']['baseline_clean']['mean']
-    b_clean_s = summary['headline']['baseline_clean']['std']
-    b_dist_m = summary['headline']['baseline_avg_dist']['mean']
-    b_dist_s = summary['headline']['baseline_avg_dist']['std']
-    n_clean_m = summary['headline']['nightmarenet_clean']['mean']
-    n_clean_s = summary['headline']['nightmarenet_clean']['std']
-    n_dist_m = summary['headline']['nightmarenet_avg_dist']['mean']
-    n_dist_s = summary['headline']['nightmarenet_avg_dist']['std']
+    b_clean_m = summary["headline"]["baseline_clean"]["mean"]
+    b_clean_s = summary["headline"]["baseline_clean"]["std"]
+    b_dist_m = summary["headline"]["baseline_avg_dist"]["mean"]
+    b_dist_s = summary["headline"]["baseline_avg_dist"]["std"]
+    n_clean_m = summary["headline"]["nightmarenet_clean"]["mean"]
+    n_clean_s = summary["headline"]["nightmarenet_clean"]["std"]
+    n_dist_m = summary["headline"]["nightmarenet_avg_dist"]["mean"]
+    n_dist_s = summary["headline"]["nightmarenet_avg_dist"]["std"]
 
     print(
         f"Baseline     clean={b_clean_m:.4f} ± {b_clean_s:.4f}  "
