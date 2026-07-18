@@ -905,7 +905,7 @@ class Pipeline:
                             # Extract metadata from comparison results and configuration
                             pipeline_metadata = {
                                 "robustness_score": float(comparison.get("robustness_score", 0.0)),
-                                "training_config": self.config
+                                "training_config": self.config,
                             }
 
                             # Save the metadata temporarily inside the exported directory
@@ -917,7 +917,7 @@ class Pipeline:
                             push_model(
                                 model_dir=tmp_dir,
                                 repo_id=auto_push_repo,
-                                metadata_path=metadata_file_path
+                                metadata_path=metadata_file_path,
                             )
                     except Exception as upload_err:
                         logger.error("Push failed: %s", upload_err)
@@ -1025,6 +1025,7 @@ class Pipeline:
             self.export(export_dir)
 
         return comparison
+
 
 def create_pipeline_from_config(
     config_path: str = "configs/default.yaml",

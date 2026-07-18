@@ -25,6 +25,7 @@ def _make_tiny_dataset(n: int = 10) -> Dataset:
     ]
     return Dataset.from_dict({"text": [texts[i % len(texts)] for i in range(n)]})
 
+
 def _tokenize_dataset(dataset: Dataset, tokenizer, max_length: int = 16):
     def tok_fn(examples):
         return tokenizer(
@@ -33,13 +34,16 @@ def _tokenize_dataset(dataset: Dataset, tokenizer, max_length: int = 16):
             max_length=max_length,
             padding="max_length",
         )
+
     ds = dataset.map(tok_fn, batched=True, remove_columns=["text"])
     ds.set_format("torch")
     return ds
 
+
 def _make_dataloader(dataset: Dataset, tokenizer, batch_size: int = 2):
     tokenized = _tokenize_dataset(dataset, tokenizer)
     return DataLoader(tokenized, batch_size=batch_size, shuffle=False)
+
 
 def _get_mock_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("gpt2", local_files_only=True)
@@ -58,6 +62,7 @@ def _get_mock_model_and_tokenizer():
         model.config.save_pretrained = lambda *args, **kwargs: None
 
     return model, tokenizer
+
 
 class TestLRScheduler:
     """Test suite for learning rate warmup + cosine decay scheduler."""
@@ -88,7 +93,7 @@ class TestLRScheduler:
             "compression": {
                 "finetune_after_prune": True,
                 "finetune_epochs": 1,
-            }
+            },
         }
 
         trainer = Trainer(
@@ -105,6 +110,7 @@ class TestLRScheduler:
 
         assert trainer.lr_scheduler is not None
         from torch.optim.lr_scheduler import LambdaLR
+
         assert isinstance(trainer.lr_scheduler, LambdaLR)
 
     def test_lr_warmup_and_decay_shape(self, tmp_path):
@@ -132,7 +138,7 @@ class TestLRScheduler:
             },
             "compression": {
                 "finetune_after_prune": False,
-            }
+            },
         }
 
         trainer = Trainer(
@@ -147,7 +153,7 @@ class TestLRScheduler:
             train_dataloader=train_loader,
             dream_dataloader=train_loader,
             nightmare_dataloader=train_loader,
-            on_progress=lambda progress: lrs.append(trainer.optimizer.param_groups[0]["lr"])
+            on_progress=lambda progress: lrs.append(trainer.optimizer.param_groups[0]["lr"]),
         )
 
         assert trainer.lr_scheduler is not None
@@ -157,11 +163,8 @@ class TestLRScheduler:
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr)
         from transformers import get_cosine_schedule_with_warmup
-        sched = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=4,
-            num_training_steps=8
-        )
+
+        sched = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=4, num_training_steps=8)
 
         lrs_sampled.append(optimizer.param_groups[0]["lr"])
         for _ in range(8):
@@ -200,7 +203,7 @@ class TestLRScheduler:
             },
             "compression": {
                 "finetune_after_prune": False,
-            }
+            },
         }
 
         trainer = Trainer(
@@ -223,10 +226,9 @@ class TestLRScheduler:
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
         from transformers import get_cosine_schedule_with_warmup
+
         sched = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=2,
-            num_training_steps=10
+            optimizer, num_warmup_steps=2, num_training_steps=10
         )
 
         base_ds = _make_tiny_dataset(4)
@@ -276,7 +278,7 @@ class TestLRScheduler:
             },
             "compression": {
                 "finetune_after_prune": False,
-            }
+            },
         }
 
         model.state_dict = lambda *args, **kwargs: {}

@@ -49,6 +49,7 @@ def test_generate_compliance_report(tmp_path):
 
     assert saved["model"]["name"] == "test-model"
 
+
 def test_config_hash_is_deterministic():
     from nightmarenet.compliance.report import _config_hash
 
@@ -61,6 +62,7 @@ def test_config_hash_is_deterministic():
     second = _config_hash(config)
 
     assert first == second
+
 
 def test_config_defaults_to_no_compliance_report():
     config = {

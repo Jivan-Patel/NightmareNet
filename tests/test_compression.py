@@ -18,6 +18,7 @@ from nightmarenet.compression.pruning import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 class TinyMLP(nn.Module):
     """A minimal 2-layer MLP with a >=2D weight matrix, so MagnitudePruner
     actually has something to prune (it skips dim() < 2 params like biases).
@@ -64,6 +65,7 @@ def tiny_block():
 # ---------------------------------------------------------------------------
 # MagnitudePruner
 # ---------------------------------------------------------------------------
+
 
 class TestMagnitudePruner:
     def test_pruning_ratio_respected(self, tiny_mlp):
@@ -112,15 +114,14 @@ class TestMagnitudePruner:
         MagnitudePruner(pruning_ratio=0.3).apply(model_a)
         MagnitudePruner(pruning_ratio=0.3).apply(model_b)
 
-        for (na, pa), (_nb, pb) in zip(
-            model_a.named_parameters(), model_b.named_parameters()
-        ):
+        for (na, pa), (_nb, pb) in zip(model_a.named_parameters(), model_b.named_parameters()):
             assert torch.equal(pa, pb), f"mismatch at {na}"
 
 
 # ---------------------------------------------------------------------------
 # BottleneckWrapper
 # ---------------------------------------------------------------------------
+
 
 class TestBottleneckWrapper:
     def test_bottleneck_reduces_parameters(self):

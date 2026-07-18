@@ -200,10 +200,8 @@ class TestCertificationIntegration:
         assert cert["budget_exceeded"] is False
 
     def test_certification_config_read_from_namespace(
-            self,
-            tmp_path: Path,
-            monkeypatch: pytest.MonkeyPatch
-):
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """Config values must be read from evaluation.certification, not hardcoded
         defaults -- verified by checking certify_dataset receives them."""
         captured = {}
@@ -355,27 +353,27 @@ class TestCertificationIntegration:
         evaluator = _make_cert_evaluator(tmp_path, metrics=["certification"])
 
         comparison = {
-          "baseline_label": "baseline",
-          "trained_label": "trained",
-          "metrics": {
-              "certification": {
+            "baseline_label": "baseline",
+            "trained_label": "trained",
+            "metrics": {
+                "certification": {
                     "baseline": {
-                       "certified_radius_mean": 0.100,
-                       "certified_radius_median": 0.090,
-                       "certification_abstain_rate": 0.20,
-                       "samples_certified": 40,
+                        "certified_radius_mean": 0.100,
+                        "certified_radius_median": 0.090,
+                        "certification_abstain_rate": 0.20,
+                        "samples_certified": 40,
                     },
                     "trained": {
-                       "certified_radius_mean": 0.142,
-                       "certified_radius_median": 0.128,
-                       "certification_abstain_rate": 0.12,
-                       "samples_certified": 44,
+                        "certified_radius_mean": 0.142,
+                        "certified_radius_median": 0.128,
+                        "certification_abstain_rate": 0.12,
+                        "samples_certified": 44,
                     },
                     "deltas": {
-                      "certified_radius_mean": 0.042,
-                      "certified_radius_median": 0.038,
-                      "certification_abstain_rate": -0.08,
-                      "samples_certified": 4,
+                        "certified_radius_mean": 0.042,
+                        "certified_radius_median": 0.038,
+                        "certification_abstain_rate": -0.08,
+                        "samples_certified": 4,
                     },
                 }
             },

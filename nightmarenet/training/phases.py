@@ -373,9 +373,7 @@ class NightmarePhase:
 
     def _save_lr(self) -> dict:
         """Save current learning rates and scheduler base_lrs."""
-        state = {
-            "optimizer_lrs": [pg["lr"] for pg in self.optimizer.param_groups]
-        }
+        state = {"optimizer_lrs": [pg["lr"] for pg in self.optimizer.param_groups]}
         if self.lr_scheduler is not None and hasattr(self.lr_scheduler, "base_lrs"):
             state["scheduler_base_lrs"] = list(self.lr_scheduler.base_lrs)
         return state
@@ -401,9 +399,7 @@ class NightmarePhase:
             param_group["lr"] *= multiplier
         # Also scale scheduler base_lrs so step() doesn't override
         if self.lr_scheduler is not None and hasattr(self.lr_scheduler, "base_lrs"):
-            self.lr_scheduler.base_lrs = [
-                lr * multiplier for lr in self.lr_scheduler.base_lrs
-            ]
+            self.lr_scheduler.base_lrs = [lr * multiplier for lr in self.lr_scheduler.base_lrs]
 
     def run(self, dataloader: DataLoader, num_epochs: int = 1) -> dict:
         """Run the nightmare phase (adversarial training).
@@ -566,6 +562,7 @@ class CompressionPhase:
         teacher_model = None
         if distillation_enabled and dataloader is not None and optimizer is not None:
             import copy
+
             teacher_model = copy.deepcopy(self.model)
             teacher_model.eval()
             for param in teacher_model.parameters():

@@ -329,9 +329,7 @@ def run_experiment(args: argparse.Namespace) -> dict:
     # empirical-robustness pass operate on identical, index-aligned samples --
     # required for the correlation analysis to be meaningful. certify_dataset
     # is then called with subset_size=None so it doesn't re-shuffle/re-select.
-    subset = dataset.shuffle(seed=args.seed).select(
-        range(min(args.subset_size, len(dataset)))
-    )
+    subset = dataset.shuffle(seed=args.seed).select(range(min(args.subset_size, len(dataset))))
 
     cert_kwargs = dict(
         text_column=text_column,

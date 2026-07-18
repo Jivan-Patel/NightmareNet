@@ -6,12 +6,16 @@ deep merge behavior, and empty/edge values.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 import yaml
 
 from nightmarenet.utils.config import (
     DEFAULT_CONFIG,
     _deep_merge,
+    _find_closest_key,
+    _levenshtein_distance,
     load_config,
     validate_config,
 )
@@ -128,3 +132,114 @@ class TestValidateConfig:
         cfg = _deep_merge(DEFAULT_CONFIG, {"training": {"batch_size": 999999}})
         errors = validate_config(cfg)
         assert isinstance(errors, list)
+
+    def test_validation_error_includes_dotted_path(self):
+        cfg = _deep_merge(DEFAULT_CONFIG, {"training": {"batch_size": -1}})
+        errors = validate_config(cfg)
+        assert any("training.batch_size" in e for e in errors)
+
+
+class TestLevenshteinDistance:
+    """Tests for the Levenshtein distance utility."""
+
+    def test_identical_strings_zero_distance(self):
+        assert _levenshtein_distance("test", "test") == 0
+
+    def test_empty_string_distance(self):
+        assert _levenshtein_distance("", "test") == 4
+        assert _levenshtein_distance("test", "") == 4
+
+    def test_single_edit_distance(self):
+        assert _levenshtein_distance("test", "tent") == 1
+        assert _levenshtein_distance("test", "tast") == 1
+        assert _levenshtein_distance("test", "tests") == 1
+
+    def test_multiple_edits_distance(self):
+        assert _levenshtein_distance("kitten", "sitting") == 3
+        assert _levenshtein_distance("training", "trainng") == 1
+
+    def test_case_sensitivity(self):
+        assert _levenshtein_distance("Test", "test") == 1
+
+
+class TestFindClosestKey:
+    """Tests for the key suggestion utility."""
+
+    def test_exact_match_returns_key(self):
+        result = _find_closest_key("training", ["model", "training", "dataset"])
+        assert result == "training"
+
+    def test_typo_within_distance_2(self):
+        result = _find_closest_key("trainng", ["model", "training", "dataset"])
+        assert result == "training"
+
+    def test_typo_beyond_distance_2_returns_none(self):
+        result = _find_closest_key("xyz", ["model", "training", "dataset"])
+        assert result is None
+
+    def test_multiple_candidates_picks_closest(self):
+        result = _find_closest_key("modle", ["model", "module", "dataset"])
+        # Both "model" and "module" are within distance 2, "module" is selected
+        assert result in ("model", "module")
+
+    def test_empty_candidates_returns_none(self):
+        result = _find_closest_key("training", [])
+        assert result is None
+
+
+class TestUnknownKeyWarnings:
+    """Tests for unknown key warning functionality."""
+
+    def test_unknown_key_with_suggestion_logged(self, tmp_path, caplog):
+        cfg_file = tmp_path / "typo.yaml"
+        cfg_data = {"model": {"name": "gpt2"}, "trainng": {"wake_epochs": 3}}
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(str(cfg_file))
+
+        warning_messages = [
+            record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        ]
+        assert any("trainng" in msg and "training" in msg for msg in warning_messages)
+
+    def test_unknown_key_without_suggestion_logged(self, tmp_path, caplog):
+        cfg_file = tmp_path / "unknown.yaml"
+        cfg_data = {"model": {"name": "gpt2"}, "xyz": {"foo": "bar"}}
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(str(cfg_file))
+
+        warning_messages = [
+            record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        ]
+        assert any("xyz" in msg and "did you mean" not in msg for msg in warning_messages)
+
+    def test_unknown_key_non_string_no_crash(self, tmp_path, caplog):
+        """Non-string YAML keys (int, bool) should warn without crashing."""
+        cfg_file = tmp_path / "nonstring.yaml"
+        cfg_file.write_text("123:\n  foo: bar\nmodel:\n  name: gpt2\n")
+        with caplog.at_level(logging.WARNING):
+            load_config(str(cfg_file))
+        warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("123" in msg for msg in warning_messages)
+
+    def test_valid_keys_no_warning(self, tmp_path, caplog):
+        cfg_file = tmp_path / "valid.yaml"
+        cfg_data = {"model": {"name": "gpt2"}, "training": {"wake_epochs": 3}}
+        cfg_file.write_text(yaml.dump(cfg_data))
+
+        with caplog.at_level(logging.WARNING):
+            load_config(str(cfg_file))
+
+        warning_messages = [
+            record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        ]
+        assert not any("Unknown config key" in msg for msg in warning_messages)

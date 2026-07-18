@@ -15,12 +15,7 @@ def tiny_model():
     """Create a small GPT2 model from config (no download)."""
     from transformers import GPT2Config
 
-    config = GPT2Config(
-        n_layer=2,
-        n_head=2,
-        n_embd=64,
-        vocab_size=100
-    )
+    config = GPT2Config(n_layer=2, n_head=2, n_embd=64, vocab_size=100)
     model = AutoModelForCausalLM.from_config(config)
     return model
 
@@ -103,20 +98,17 @@ class TestDistillationDisabled:
             device="cpu",
         )
 
-        with patch(
-            "nightmarenet.compression.distillation.run_distillation"
-        ) as mock_distill:
-            phase.run(dataloader=tiny_dataloader, optimizer=torch.optim.SGD(
-                tiny_model.parameters(), lr=0.01
-            ))
+        with patch("nightmarenet.compression.distillation.run_distillation") as mock_distill:
+            phase.run(
+                dataloader=tiny_dataloader,
+                optimizer=torch.optim.SGD(tiny_model.parameters(), lr=0.01),
+            )
 
         mock_distill.assert_not_called()
 
 
 class TestDistillationGatedOnPruning:
-    def test_distillation_gated_on_pruning_success(
-        self, tiny_model, tiny_dataloader
-    ):
+    def test_distillation_gated_on_pruning_success(self, tiny_model, tiny_dataloader):
         """If pruning fails, distillation should be skipped."""
         from nightmarenet.training.phases import CompressionPhase
 
@@ -138,9 +130,7 @@ class TestDistillationGatedOnPruning:
             "nightmarenet.compression.pruning.MagnitudePruner.apply",
             side_effect=RuntimeError("Pruning failed"),
         ):
-            with patch(
-                "nightmarenet.compression.distillation.run_distillation"
-            ) as mock_distill:
+            with patch("nightmarenet.compression.distillation.run_distillation") as mock_distill:
                 result = phase.run(
                     dataloader=tiny_dataloader,
                     optimizer=torch.optim.SGD(tiny_model.parameters(), lr=0.01),

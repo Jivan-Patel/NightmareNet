@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+
 def fgsm_perturb(model: nn.Module, batch: dict, epsilon: float = 0.01) -> dict:
     """Generate FGSM adversarial examples from a batch.
 
@@ -111,7 +112,7 @@ def run_distillation(
                     func.log_softmax(student_logits / temperature, dim=-1),
                     func.softmax(teacher_logits / temperature, dim=-1),
                     reduction="batchmean",
-                ) * (temperature ** 2)
+                ) * (temperature**2)
 
                 loss = alpha * kl_loss + (1.0 - alpha) * task_loss
 

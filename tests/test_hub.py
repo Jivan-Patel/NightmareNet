@@ -12,7 +12,7 @@ def test_generate_model_card_formatting():
         "robustness_score": 0.8542,
         "cycle_count": 4,
         "distortion_families": ["text", "semantic"],
-        "config": {"model": {"name": "distilbert-base-uncased"}}
+        "config": {"model": {"name": "distilbert-base-uncased"}},
     }
     card_content = _generate_model_card(repo_id, metadata)
     # Assert tag headers are present
@@ -21,6 +21,7 @@ def test_generate_model_card_formatting():
     assert "nightmarenet_cycle_count: 4" in card_content
     assert "**Robustness Score:** 0.8542" in card_content
     assert "distilbert-base-uncased" in card_content
+
 
 @patch("huggingface_hub.HfApi")
 @patch.dict("os.environ", {"HF_TOKEN": "mock_token_for_testing"})
@@ -40,7 +41,7 @@ def test_push_model_execution(mock_hf_api, tmp_path):
     push_model(
         model_dir=str(model_dir),
         repo_id="test-user/hardened-test",
-        metadata_path=str(metadata_file)
+        metadata_path=str(metadata_file),
     )
     # Verify local file generation and API calls
     assert (model_dir / "README.md").exists()
@@ -49,6 +50,7 @@ def test_push_model_execution(mock_hf_api, tmp_path):
     )
     mock_api_instance.upload_folder.assert_called_once()
 
+
 @patch("huggingface_hub.snapshot_download")
 def test_pull_model_execution(mock_snapshot, tmp_path):
     """Verify pull_model creates target folders and routes repo arguments to snapshot downloader."""
@@ -56,7 +58,5 @@ def test_pull_model_execution(mock_snapshot, tmp_path):
     pull_model(repo_id="test-org/public-weights", target_dir=str(target_dir))
     assert target_dir.exists()
     mock_snapshot.assert_called_once_with(
-        repo_id="test-org/public-weights",
-        local_dir=str(target_dir),
-        token=None
+        repo_id="test-org/public-weights", local_dir=str(target_dir), token=None
     )

@@ -25,6 +25,7 @@ def _make_tiny_dataset(n: int = 10) -> Dataset:
     ]
     return Dataset.from_dict({"text": [texts[i % len(texts)] for i in range(n)]})
 
+
 def _tokenize_dataset(dataset: Dataset, tokenizer, max_length: int = 16):
     def tok_fn(examples):
         return tokenizer(
@@ -33,13 +34,16 @@ def _tokenize_dataset(dataset: Dataset, tokenizer, max_length: int = 16):
             max_length=max_length,
             padding="max_length",
         )
+
     ds = dataset.map(tok_fn, batched=True, remove_columns=["text"])
     ds.set_format("torch")
     return ds
 
+
 def _make_dataloader(dataset: Dataset, tokenizer, batch_size: int = 2):
     tokenized = _tokenize_dataset(dataset, tokenizer)
     return DataLoader(tokenized, batch_size=batch_size, shuffle=False)
+
 
 def _get_mock_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("gpt2", local_files_only=True)
@@ -58,6 +62,7 @@ def _get_mock_model_and_tokenizer():
         model.config.save_pretrained = lambda *args, **kwargs: None
 
     return model, tokenizer
+
 
 class TestStrengthScheduler:
     """Test suite for per-cycle distortion strength scheduling."""
@@ -93,7 +98,7 @@ class TestStrengthScheduler:
             },
             "compression": {
                 "finetune_after_prune": False,
-            }
+            },
         }
 
         # Track the strength values set on generators across cycles
@@ -182,7 +187,7 @@ class TestStrengthScheduler:
             },
             "compression": {
                 "finetune_after_prune": False,
-            }
+            },
         }
 
         dream_gen = DreamDatasetGenerator(strength=0.25)

@@ -310,7 +310,11 @@ class Evaluator:
             logger.warning(
                 "Certification budget exceeded: n=%d * subset_size=%d = %d > budget=%d; "
                 "reducing n to %d",
-                n, effective_size, n * effective_size, budget, reduced_n,
+                n,
+                effective_size,
+                n * effective_size,
+                budget,
+                reduced_n,
             )
             n = reduced_n
             budget_exceeded = True
@@ -406,11 +410,11 @@ class Evaluator:
 
             comparison["metrics"][metric_name] = metric_comparison
 
-                # Backward-compatible top-level robustness summary.
+            # Backward-compatible top-level robustness summary.
         robustness = comparison["metrics"].get("robustness")
         if robustness:
-            trained_auc = (robustness.get("trained", {}).get("auc_robustness"))
-            delta_auc = (robustness.get("deltas", {}).get("auc_robustness"))
+            trained_auc = robustness.get("trained", {}).get("auc_robustness")
+            delta_auc = robustness.get("deltas", {}).get("auc_robustness")
 
             if trained_auc is not None:
                 comparison["robustness_score"] = trained_auc
@@ -546,9 +550,7 @@ class Evaluator:
             sig = r.get("significance", {})
             if sig and sig.get("method") == "bootstrap_ci":
                 sig_verdict = (
-                    "**statistically significant**"
-                    if sig.get("significant")
-                    else "not significant"
+                    "**statistically significant**" if sig.get("significant") else "not significant"
                 )
                 lines.extend(
                     [
@@ -668,10 +670,7 @@ class Evaluator:
                 f"| {_fmt(trained.get('certified_accuracy'))} "
                 f"| {_fmt(deltas.get('certified_accuracy'), signed=True)} |"
             ),
-            (
-                f"| Samples certified | {_samples_str(baseline)} "
-                f"| {_samples_str(trained)} | N/A |"
-            ),
+            (f"| Samples certified | {_samples_str(baseline)} | {_samples_str(trained)} | N/A |"),
             "",
             f"**Configuration**: noise sigma (σ) = {sigma}, smoothing samples (n) = {n}, "
             f"selection samples (n0) = {n0}, significance level (α) = {alpha}",

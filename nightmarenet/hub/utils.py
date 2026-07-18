@@ -13,4 +13,5 @@ def require_hf_hub(func: Callable[..., Any]) -> Callable[..., Any]:
                 "Please install it using: pip install huggingface_hub"
             ) from e
         return func(*args, **kwargs)
+
     return wrapper

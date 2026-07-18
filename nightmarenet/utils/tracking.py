@@ -73,9 +73,7 @@ class ExperimentTracker:
                 self._writer = SummaryWriter(log_dir=log_dir)
                 logger.info("TensorBoard tracking initialized (log_dir=%s).", log_dir)
             except ImportError:
-                logger.warning(
-                    "tensorboard not installed; falling back to no-op tracker."
-                )
+                logger.warning("tensorboard not installed; falling back to no-op tracker.")
                 self.backend = "none"
 
         elif self.backend != "none":
@@ -119,12 +117,14 @@ class ExperimentTracker:
         prefixed = {f"{phase}/{k}": v for k, v in metrics.items() if isinstance(v, (int, float))}
         prefixed["cycle"] = cycle
 
-        self.lineage["phases"].append({
-            "cycle": cycle,
-            "phase": phase,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "metrics": metrics,
-        })
+        self.lineage["phases"].append(
+            {
+                "cycle": cycle,
+                "phase": phase,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "metrics": metrics,
+            }
+        )
 
         self.log_metrics(prefixed)
 

@@ -535,10 +535,7 @@ class TestCertifyDataset:
 
         assert summary["n_samples"] == 3
         assert 0.0 <= summary["certification_abstain_rate"] <= 1.0
-        assert (
-            summary["certified_accuracy"] is None
-            or 0.0 <= summary["certified_accuracy"] <= 1.0
-        )
+        assert summary["certified_accuracy"] is None or 0.0 <= summary["certified_accuracy"] <= 1.0
         assert len(summary["results"]) == 3
 
     def test_budget_total_divided_across_samples_exactly(self, fake_model, fake_tokenizer):

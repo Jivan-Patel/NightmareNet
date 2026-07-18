@@ -88,9 +88,7 @@ class TinyTargetModel(nn.Module):
         with torch.no_grad():
             weights = torch.zeros(len(TinyTokenizer.vocab), 3)
             weights[:, 0] = torch.arange(len(TinyTokenizer.vocab), dtype=torch.float32)
-            weights[:, 1] = (
-                torch.arange(len(TinyTokenizer.vocab), dtype=torch.float32) / 10
-            )
+            weights[:, 1] = torch.arange(len(TinyTokenizer.vocab), dtype=torch.float32) / 10
             self.embeddings.weight.copy_(weights)
         self.forward_calls = 0
 

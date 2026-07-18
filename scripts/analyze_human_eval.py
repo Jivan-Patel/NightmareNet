@@ -11,13 +11,15 @@ def load_data(input_dir="data/human_eval"):
     with open(os.path.join(input_dir, "raw_responses.csv"), encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            responses.append({
-                "annotator_id": row["annotator_id"],
-                "sample_id": row["sample_id"],
-                "semantic_score": int(row["semantic_score"]),
-                "naturalness_score": int(row["naturalness_score"]),
-                "adversarial_score": int(row["adversarial_score"])
-            })
+            responses.append(
+                {
+                    "annotator_id": row["annotator_id"],
+                    "sample_id": row["sample_id"],
+                    "semantic_score": int(row["semantic_score"]),
+                    "naturalness_score": int(row["naturalness_score"]),
+                    "adversarial_score": int(row["adversarial_score"]),
+                }
+            )
 
     mapping = {}
     with open(os.path.join(input_dir, "master_mapping.csv"), encoding="utf-8") as f:
@@ -25,10 +27,11 @@ def load_data(input_dir="data/human_eval"):
         for row in reader:
             mapping[row["sample_id"]] = {
                 "engine": row["engine"],
-                "strength": float(row["strength"])
+                "strength": float(row["strength"]),
             }
 
     return responses, mapping
+
 
 def compute_krippendorff_alpha(sample_ratings, n_categories=5):
     """
@@ -78,6 +81,7 @@ def compute_krippendorff_alpha(sample_ratings, n_categories=5):
         return 1.0
     return 1.0 - (observed_disagreement / expected_disagreement)
 
+
 def execute_analysis(input_dir="data/human_eval"):
     responses, mapping = load_data(input_dir)
 
@@ -92,11 +96,7 @@ def execute_analysis(input_dir="data/human_eval"):
         cond_key = (meta["engine"], meta["strength"])
 
         if cond_key not in condition_metrics:
-            condition_metrics[cond_key] = {
-                "semantic": [],
-                "naturalness": [],
-                "adversarial": []
-            }
+            condition_metrics[cond_key] = {"semantic": [], "naturalness": [], "adversarial": []}
 
         condition_metrics[cond_key]["semantic"].append(resp["semantic_score"])
         condition_metrics[cond_key]["naturalness"].append(resp["naturalness_score"])
@@ -125,20 +125,15 @@ def execute_analysis(input_dir="data/human_eval"):
         print(f"  -> Verification [{name} > 0.4]: {status}")
 
     print("\n=== MEAN TIER PERFORMANCE SUMMARY ===")
-    print(
-        f"{'Engine':<12} | {'Strength':<8} | {'Semantic':<8} | "
-        f"{'Natural':<8} | {'Advers':<8}"
-    )
+    print(f"{'Engine':<12} | {'Strength':<8} | {'Semantic':<8} | {'Natural':<8} | {'Advers':<8}")
     print("-" * 55)
 
     for (engine, strength), metrics in sorted(condition_metrics.items()):
         m_sem = np.mean(metrics["semantic"])
         m_nat = np.mean(metrics["naturalness"])
         m_adv = np.mean(metrics["adversarial"])
-        print(
-            f"{engine:<12} | {strength:<8} | {m_sem:<8.2f} | "
-            f"{m_nat:<8.2f} | {m_adv:<8.2f}"
-        )
+        print(f"{engine:<12} | {strength:<8} | {m_sem:<8.2f} | {m_nat:<8.2f} | {m_adv:<8.2f}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze human evaluation results")
