@@ -688,20 +688,19 @@ async def compare_distortions(
     tags=["Demo"],
 )
 @limiter.limit("60/minute")
-async def interactive_demo(request: Request, body: DemoRequest = _DEMO_BODY) -> DemoResponse:
-<<<<<<< HEAD
+async def interactive_demo(
+    request: Request,
+    body: DemoRequest = _DEMO_BODY,
+) -> DemoResponse:
     """Run dream + nightmare distortions in one call for the guided demo.
 
     Returns both distortion results with a resilience delta and a
-    human-readable insight explaining what the distortions reveal
-    about the input text.
+    short explanation about the input text.
     """
-=======
-    """Run dream + nightmare distortions in one call for the guided demo."""
->>>>>>> a748dfcd102840e66cf54eb01fa83efe57c19ad0
     try:
         dream_strength = 0.25
         nightmare_strength = 0.80
+        # keep the existing function body below unchanged
 
         dream_result = _apply_dream_distortions(body.text, dream_strength, seed=body.seed)
         nightmare_result = _apply_nightmare_distortions(
