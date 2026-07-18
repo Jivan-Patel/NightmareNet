@@ -60,10 +60,8 @@ class _TinySeqClassModel(torch.nn.Module):
         self.classifier = torch.nn.Linear(8, 2)
 
     def forward(self, input_ids, attention_mask=None, labels=None, **kwargs):
-        # Pool over sequence dim, then classify
         hidden = input_ids.float()  # (batch, seq_len=8)
-        logits = self.classifier(hidden)  # (batch, seq_len, 2) — take mean
-        logits = logits.mean(dim=1)  # (batch, 2)
+        logits = self.classifier(hidden)  # (batch, 2)
         loss = torch.nn.functional.cross_entropy(
             logits, labels if labels is not None else torch.zeros(logits.size(0), dtype=torch.long)
         )
