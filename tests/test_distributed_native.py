@@ -5,7 +5,6 @@ import os
 from unittest import mock
 
 import nightmarenet
-
 import pytest
 import torch
 import torch.nn as nn
@@ -330,7 +329,12 @@ def test_checkpoint_missing_model_weights(tmp_path):
     checkpoint_dir.mkdir()
     (checkpoint_dir / ".complete").write_text("complete")
     (checkpoint_dir / "metadata.json").write_text(
-        json.dumps({"version": nightmarenet.__version__, "cycle": 1, "phase": "wake", "config_hash": "abc"})
+        json.dumps({
+            "version": nightmarenet.__version__,
+            "cycle": 1,
+            "phase": "wake",
+            "config_hash": "abc",
+        })
     )
 
     with pytest.raises(ValueError, match="does not contain any valid model weights"):
@@ -343,7 +347,12 @@ def test_checkpoint_missing_optimizer_state(tmp_path):
     checkpoint_dir.mkdir()
     (checkpoint_dir / ".complete").write_text("complete")
     (checkpoint_dir / "metadata.json").write_text(
-        json.dumps({"version": nightmarenet.__version__, "cycle": 1, "phase": "wake", "config_hash": "abc"})
+        json.dumps({
+            "version": nightmarenet.__version__,
+            "cycle": 1,
+            "phase": "wake",
+            "config_hash": "abc",
+        })
     )
     (checkpoint_dir / "model.pt").write_text("dummy")
 
@@ -412,7 +421,7 @@ def test_checkpoint_save_overwrites_existing(tmp_path):
     assert os.path.exists(target_dir2)
 
     metadata_path = os.path.join(target_dir2, "metadata.json")
-    with open(metadata_path, "r") as f:
+    with open(metadata_path) as f:
         meta = json.load(f)
     assert meta["metrics"]["loss"] == 0.3
 
