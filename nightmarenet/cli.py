@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from nightmarenet import __version__
+from nightmarenet.hub.core import pull_model, push_model
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -52,7 +53,7 @@ def cmd_train(args: argparse.Namespace) -> int:
         config=config,
         on_event=on_event,
         distributed=getattr(args, "distributed", None),
-        resume_dir=getattr(args, "resume", None)
+        resume_dir=getattr(args, "resume", None),
     )
 
     try:
@@ -164,8 +165,14 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         output_dir = args.output if args.output else "./results"
         no_cache = getattr(args, "no_cache", False)
 
-        orchestrator = EnsembleOrchestrator(args.config)
-        results = orchestrator.run(timeout_seconds=300, output_dir=output_dir, no_cache=no_cache)
+        try:
+            orchestrator = EnsembleOrchestrator(args.config)
+            results = orchestrator.run(
+                timeout_seconds=300, output_dir=output_dir, no_cache=no_cache
+            )
+        except (FileNotFoundError, OSError) as e:
+            print(f"Error: could not load benchmark config: {e}", file=sys.stderr)
+            return 1
 
         # Analyze pareto frontier
         pareto_front = get_pareto_frontier(results["models_summary"])
@@ -176,12 +183,10 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         results["degradation_curves"] = curves
 
         # We want json, csv, latex
-        # format_all reads 'models_summary' from results dict for table generation
         format_all(results, formats=["json", "csv", "latex"], output_dir=output_dir)
         print(f"\nResults saved to {output_dir}")
 
         return 0
-
     import yaml
 
     from nightmarenet.evaluation.evaluator import Evaluator
@@ -255,11 +260,12 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         print("\n[SUCCESS] Metrics match or exceed canonical paper specifications!")
     else:
         print(
-            "\n[WARNING] Benchmark completed, but metrics diverged "
-            "below the target paper standard."
+            "\n[WARNING] Benchmark completed, but metrics diverged below the target paper standard."
         )
 
     return 0
+
+
 def cmd_distort(args: argparse.Namespace) -> int:
     """Apply a distortion to input text."""
     from nightmarenet.distortions import dream, nightmare
@@ -431,14 +437,14 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 print(
                     "Error: transferred JSON is missing required keys "
                     "('robustness_score', 'clean_accuracy')",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
                 return 1
             if "robustness_score" not in b_data or "clean_accuracy" not in b_data:
                 print(
                     "Error: baseline JSON is missing required keys "
                     "('robustness_score', 'clean_accuracy')",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
                 return 1
 
@@ -467,9 +473,7 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 return 1
 
             model = create_transfer_model(
-                str(foundation_path),
-                task_type=config.task_type,
-                num_labels=config.num_labels
+                str(foundation_path), task_type=config.task_type, num_labels=config.num_labels
             )
 
             print(f"Loading dataset: {config.dataset}")
@@ -478,13 +482,12 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 {
                     "input_ids": torch.zeros((1, 128), dtype=torch.long),
                     "attention_mask": torch.ones((1, 128), dtype=torch.long),
-                    "labels": torch.zeros(1, dtype=torch.long)
-                } for _ in range(2)
+                    "labels": torch.zeros(1, dtype=torch.long),
+                }
+                for _ in range(2)
             ]
             dataloader = DataLoader(
-                dummy_data,
-                batch_size=config.batch_size,
-                collate_fn=default_data_collator
+                dummy_data, batch_size=config.batch_size, collate_fn=default_data_collator
             )
 
             device = torch.device(config.device)
@@ -497,7 +500,7 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 num_epochs=config.num_epochs,
                 freeze_bottom_n=config.freeze_bottom_n,
                 unfreeze_after_epoch=config.unfreeze_after_epoch,
-                strict_layer_freezing=getattr(config, "strict_layer_freezing", False)
+                strict_layer_freezing=getattr(config, "strict_layer_freezing", False),
             )
 
             print("Transfer fine-tuning completed.")
@@ -510,6 +513,7 @@ def cmd_transfer(args: argparse.Namespace) -> int:
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"Error during transfer fine-tuning: {e}", file=sys.stderr)
             return 1
@@ -517,6 +521,26 @@ def cmd_transfer(args: argparse.Namespace) -> int:
         print("Invalid arguments for transfer command.", file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_push(args: argparse.Namespace) -> int:
+    """Push a hardened model package structure to HuggingFace Hub."""
+    try:
+        push_model(model_dir=args.model, repo_id=args.hub, metadata_path=args.metadata)
+        return 0
+    except Exception as e:
+        print(f"Error during Hub push operational routing: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    """Pull a pre-hardened model snapshot layout from HuggingFace Hub."""
+    try:
+        pull_model(repo_id=args.repo, target_dir=args.output)
+        return 0
+    except Exception as e:
+        print(f"Error during Hub pull operational routing: {e}", file=sys.stderr)
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -605,9 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_parser.add_argument("--model", required=True, help="Path to the trained model")
     register_parser.add_argument("--name", required=True, help="Name for the foundation model")
 
-    _ = foundation_subparsers.add_parser(
-        "list", help="List registered foundation models"
-    )
+    _ = foundation_subparsers.add_parser("list", help="List registered foundation models")
 
     # transfer
     transfer_parser = subparsers.add_parser(
@@ -620,6 +642,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     transfer_parser.add_argument("--transferred", help="Path to transferred evaluation JSON")
     transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")
+
+    # push command parsing mapping
+    push_parser = subparsers.add_parser(
+        "push", help="Upload a hardened model directory to HuggingFace Hub"
+    )
+    push_parser.add_argument(
+        "--model", required=True, help="Path to local trained checkpoint directory"
+    )
+    push_parser.add_argument(
+        "--hub", required=True, help="Target HuggingFace repository destination space (org/repo)"
+    )
+    push_parser.add_argument(
+        "--metadata", help="Optional path to training log metadata file (YAML)"
+    )
+
+    # pull command parsing mapping
+    pull_parser = subparsers.add_parser(
+        "pull", help="Download a pre-hardened model snapshot layout locally"
+    )
+    pull_parser.add_argument(
+        "--repo", required=True, help="Target HuggingFace source space handle (org/repo)"
+    )
+    pull_parser.add_argument(
+        "--output",
+        required=True,
+        help="Target output directory vector to write weights artifacts into",
+    )
 
     return parser
 
@@ -639,6 +688,8 @@ def main(argv: Optional[list] = None) -> int:
         "distort": cmd_distort,
         "foundation": cmd_foundation,
         "transfer": cmd_transfer,
+        "push": cmd_push,
+        "pull": cmd_pull,
     }
 
     return commands[args.command](args)

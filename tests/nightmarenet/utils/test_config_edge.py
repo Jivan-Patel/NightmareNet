@@ -133,6 +133,11 @@ class TestValidateConfig:
         errors = validate_config(cfg)
         assert isinstance(errors, list)
 
+    def test_validation_error_includes_dotted_path(self):
+        cfg = _deep_merge(DEFAULT_CONFIG, {"training": {"batch_size": -1}})
+        errors = validate_config(cfg)
+        assert any("training.batch_size" in e for e in errors)
+
 
 class TestLevenshteinDistance:
     """Tests for the Levenshtein distance utility."""
@@ -214,6 +219,15 @@ class TestUnknownKeyWarnings:
             if record.levelname == "WARNING"
         ]
         assert any("xyz" in msg and "did you mean" not in msg for msg in warning_messages)
+
+    def test_unknown_key_non_string_no_crash(self, tmp_path, caplog):
+        """Non-string YAML keys (int, bool) should warn without crashing."""
+        cfg_file = tmp_path / "nonstring.yaml"
+        cfg_file.write_text("123:\n  foo: bar\nmodel:\n  name: gpt2\n")
+        with caplog.at_level(logging.WARNING):
+            load_config(str(cfg_file))
+        warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("123" in msg for msg in warning_messages)
 
     def test_valid_keys_no_warning(self, tmp_path, caplog):
         cfg_file = tmp_path / "valid.yaml"

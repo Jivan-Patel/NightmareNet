@@ -2,16 +2,16 @@
 
 # NightmareNet
 
-**Deep Learning Adversarial Network for Image Synthesis**
+**Autonomous Adversarial Robustness Training Platform**
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Adit-Jain-srm/NightmareNet)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Deep Learning](https://img.shields.io/badge/Deep_Learning-GAN-FF6F00?logo=tensorflow)](https://en.wikipedia.org/wiki/Generative_adversarial_network)
+[![Adversarial Robustness](https://img.shields.io/badge/Adversarial_Robustness-Training-EE4C2C?logo=pytorch&logoColor=white)](https://arxiv.org/abs/1706.06083)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/Adit-Jain-srm/NightmareNet)](https://github.com/Adit-Jain-srm/NightmareNet)
 
-*A generative adversarial network exploring the boundaries of AI-generated imagery.*
+*A cyclic adversarial training platform that continuously strengthens model robustness through the Wake → Dream → Nightmare → Compress learning cycle.*
 
 </div>
 
@@ -28,8 +28,8 @@
 **The first platform that actively improves model robustness through biologically-grounded training cycles.**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-558%2B%20passing-brightgreen)](#testing)
+[![CI](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml/badge.svg)](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-660%2B%20passing-brightgreen)](#testing)
 [![Python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)](#installation)
 
 *Wake. Dream. Nightmare. Compress. Repeat.*
@@ -177,18 +177,27 @@ Measured on RTX 3050 Ti (4 GB VRAM), DistilBERT-base-uncased, 500 train / 200 ev
 
 > **Key finding:** NightmareNet delivers robustness gains *without* the typical clean-accuracy tradeoff. The +13.64% relative robustness improvement comes with a +4.0 absolute point clean accuracy gain (0.745 → 0.785).
 
+
+### Measured Benchmarks (v1)
 | Model | Method | Clean Acc | TextFooler Acc | BertAttack Acc | Robustness Score | Params |
 |-------|--------|-----------|----------------|----------------|------------------|--------|
 | DistilBERT | Standard FT (baseline) | 90.5% | 23.1% | 17.6% | 0.412 | 66.0M |
 | DistilBERT | Adversarial Training (PGD) | 88.2% | 41.7% | 38.4% | 0.598 | 66.0M |
 | DistilBERT | TRADES | 87.6% | 44.9% | 42.1% | 0.621 | 66.0M |
-| DistilBERT | **NightmareNet (1 cycle)** | 89.1% | 51.3%* | 48.2%* | 0.683* | 66.0M |
-| DistilBERT | **NightmareNet (3 cycles)** | **89.7%** | **58.4%*** | **55.7%*** | **0.741*** | **42.6M** |
 
-\* Multi-cycle TextFooler/BertAttack numbers are projected from the v1 distortion-sweep trend; full adversarial-attack benchmark pending GPU time.
+
+### Projected Benchmarks (Pending v2 Evaluation)
 
 > [!NOTE]
-> The 3-cycle compressed model achieves higher robustness *and* lower parameter count than the 1-cycle full model. Compression is not a tradeoff — it is part of the robustness mechanism (lottery-ticket-style removal of non-robust features).
+> The following benchmark values are projected estimates based on the v1 distortion-sweep trend. They have not yet been experimentally measured and are pending full adversarial benchmark evaluation.
+
+| Model | Method | Clean Acc | TextFooler Acc | BertAttack Acc | Robustness Score | Params |
+|-------|--------|-----------|----------------|----------------|------------------|--------|
+| DistilBERT | **NightmareNet (1 cycle)** | 89.1% | 51.3% | 48.2% | 0.683 | 66.0M |
+| DistilBERT | **NightmareNet (3 cycles)** | **89.7%** | **58.4%** | **55.7%** | **0.741** | **42.6M** |
+
+> [!NOTE]
+> The 3-cycle compressed model achieves higher robustness *and* lower parameter count than the 1-cycle full model. Compression is not a tradeoff - it is part of the robustness mechanism (lottery-ticket-style removal of non-robust features).
 
 ---
 
@@ -265,6 +274,38 @@ cd frontend && npm install && npm run dev    # http://localhost:3000
 
 ---
 
+## EU AI Act Compliance Reports
+
+NightmareNet can automatically generate compliance reports aligned with **EU AI Act Article 15** after a pipeline run.
+
+Enable the feature in your configuration:
+
+```yaml
+tracking:
+  compliance_report: true
+```
+
+When enabled, NightmareNet generates both:
+
+- JSON compliance report (machine-readable)
+- Markdown compliance report (human-readable)
+
+Each report includes:
+
+- Training lineage
+- Dataset and model metadata
+- Configuration SHA-256 hash
+- Model SHA-256 hash
+- Robustness metrics
+- Runtime environment
+- EU AI Act Article 15 mapping
+- NIST AI RMF mapping
+
+The API also exposes generated reports:
+
+- `GET /api/v1/compliance/report/{run_id}`
+- `GET /api/v1/compliance/reports`
+
 ## CLI Reference
 
 Four top-level commands cover the full workflow.
@@ -339,6 +380,30 @@ nightmarenet distort --type nightmare --strength 0.7 --seed 42 \
 
 The CLI is a thin wrapper around `nightmarenet.pipeline.Pipeline`, `nightmarenet.distortions.registry.get_registry()`, and `nightmarenet.evaluation.evaluator.Evaluator`. Anything you can do via CLI you can do programmatically.
 
+### HuggingFace Hub Integration
+
+NightmareNet supports pushing your hardened, robust models directly to the HuggingFace Hub, or pulling pre-hardened checkpoints down for inference.
+
+#### Push a Hardened Model
+Uploads a local model directory alongside an auto-generated model card:
+```bash
+nightmarenet push --model ./output/best --hub your-username/nightmarenet-model-robust --metadata ./output/metadata.yaml
+```
+
+### Pull a Pre-Hardened Model
+
+You can pull down a verified, pre-hardened model directly from the HuggingFace Hub:
+
+```python
+from nightmarenet.hub import pull_model
+
+# Download the model artifacts to a local directory
+model_dir = pull_model(
+    repo_id="username/hardened-robust-model",
+    local_dir="./models/hardened-robust-model"
+)
+print(f"Model successfully loaded at: {model_dir}")
+
 ---
 
 ## Use Cases
@@ -392,9 +457,8 @@ If you use NightmareNet in academic work, please cite:
 
 ## Community
 
-- **Discord** — `https://discord.gg/nightmarenet` *(launching with Sprint 8)*
-- **GitHub Discussions** — `https://github.com/Adit-Jain-srm/NightmareNet/discussions` for design questions, RFC proposals, paper review threads
-- **Issues** — bug reports and feature requests welcome
+- **GitHub Discussions** - `https://github.com/Adit-Jain-srm/NightmareNet/discussions` for design questions, RFC proposals, paper review threads
+- **Issues** - bug reports and feature requests welcome
 - **Contributing** — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for local dev setup, architecture pointers, plugin authoring, and the PR checklist
 - **Sponsors** — GitHub Sponsors and OpenCollective links go here once the project moves out of pre-release
 
@@ -407,7 +471,7 @@ If you use NightmareNet in academic work, please cite:
 ## Testing
 
 ```bash
-pytest --cov=nightmarenet --cov-report=term-missing tests/ -v --tb=short   # 558+ tests
+pytest --cov=nightmarenet --cov-report=term-missing tests/ -v --tb=short   # 660+ tests
 pytest -m slow tests/test_distortion_fuzz.py -v                            # 1000+ sample fuzz suite
 ruff check .                         # zero lint errors
 mypy nightmarenet/                   # type check

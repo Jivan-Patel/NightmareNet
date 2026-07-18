@@ -93,7 +93,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "dream_strength": 0.25,
         "nightmare_strength": 0.8,
         "strength_schedule": "uniform",
-        "strength_min": 0.3,
+        "schedule_across_cycles": False,
+        "strength_min": 0.2,
         "strength_max": 0.9,
         "text": {
             "char_swap": 0.3,
@@ -175,6 +176,7 @@ _SCHEMA: dict[str, tuple] = {
     "distortion.dream_strength": (float, 0.0, 1.0, True),
     "distortion.nightmare_strength": (float, 0.0, 1.0, True),
     "distortion.strength_schedule": (str, None, None, False),
+    "distortion.schedule_across_cycles": (bool, None, None, False),
     "distortion.strength_min": (float, 0.0, 1.0, False),
     "distortion.strength_max": (float, 0.0, 1.0, False),
     "compression.pruning_ratio": (float, 0.0, _MAX_PRUNING_RATIO, True),
@@ -251,13 +253,9 @@ def validate_config(config: dict) -> list[str]:
         # Range check for numeric types
         if isinstance(value, (int, float)):
             if min_val is not None and value < min_val:
-                errors.append(
-                    f"Config '{dotted_key}' must be >= {min_val}, got {value}"
-                )
+                errors.append(f"Config '{dotted_key}' must be >= {min_val}, got {value}")
             if max_val is not None and value > max_val:
-                errors.append(
-                    f"Config '{dotted_key}' must be <= {max_val}, got {value}"
-                )
+                errors.append(f"Config '{dotted_key}' must be <= {max_val}, got {value}")
 
     webhooks = _get_nested(config, "notifications.webhooks")
     if webhooks is not None:
@@ -276,9 +274,7 @@ def validate_config(config: dict) -> list[str]:
                     errors.append(f"Config 'notifications.webhooks[{i}].url' must be a string")
                 if "events" in wh:
                     if not isinstance(wh["events"], list):
-                        errors.append(
-                            f"Config 'notifications.webhooks[{i}].events' must be a list"
-                        )
+                        errors.append(f"Config 'notifications.webhooks[{i}].events' must be a list")
                     else:
                         for j, ev in enumerate(wh["events"]):
                             if not isinstance(ev, str):
@@ -307,15 +303,16 @@ def _warn_unknown_keys(user_config: dict) -> None:
     unknown_keys = set(user_config.keys()) - valid_top_level_keys
 
     for unknown_key in unknown_keys:
-        suggestion = _find_closest_key(unknown_key, list(valid_top_level_keys))
+        key_str = str(unknown_key)
+        suggestion = _find_closest_key(key_str, list(valid_top_level_keys))
         if suggestion:
             logger.warning(
                 "Unknown config key '%s' - did you mean '%s'?",
-                unknown_key,
+                key_str,
                 suggestion,
             )
         else:
-            logger.warning("Unknown config key '%s'", unknown_key)
+            logger.warning("Unknown config key '%s'", key_str)
 
 
 def load_config(path: str) -> dict:
@@ -348,8 +345,7 @@ def load_config(path: str) -> dict:
 
     if not isinstance(user_config, dict):
         raise ValueError(
-            f"Config file must contain a YAML mapping,"
-            f" got {type(user_config).__name__}"
+            f"Config file must contain a YAML mapping, got {type(user_config).__name__}"
         )
 
     # Warn about unknown top-level keys

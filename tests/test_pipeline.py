@@ -280,12 +280,14 @@ class TestEvalSplit:
         """Return a minimal HuggingFace Dataset with `n` text samples."""
         from datasets import Dataset
 
-        return Dataset.from_dict({
-            "text": [
-                f"Sample {i}: This is a valid training sentence with enough text."
-                for i in range(n)
-            ]
-        })
+        return Dataset.from_dict(
+            {
+                "text": [
+                    f"Sample {i}: This is a valid training sentence with enough text."
+                    for i in range(n)
+                ]
+            }
+        )
 
     def test_eval_split_creates_held_out_dataset(self, minimal_config):
         """With a large enough dataset, prepare() should split into train and eval."""

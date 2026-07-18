@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { searchExperiments } from "@/lib/api";
 import {
   IconBeaker,
   IconDownload,
@@ -269,24 +270,76 @@ export function ExperimentList({
 }: ExperimentListProps = {}) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | Experiment["status"]>("all");
+  const [semanticIds, setSemanticIds] = useState<string[] | null>(null);
+  const [semanticPending, setSemanticPending] = useState(false);
+  const [semanticError, setSemanticError] = useState(false);
   const toast = useToast();
 
   // `experiments` defaults to the demo sample — callers can pass `[]` to
   // exercise the empty state, or a real dataset once the runs API is wired.
   const source = experiments ?? SAMPLE;
 
+  useEffect(() => {
+    const trimmed = query.trim();
+    setSemanticIds(null);
+    if (trimmed.length < 3) {
+      setSemanticPending(false);
+      setSemanticError(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const statusFilter =
+        filter === "all"
+          ? undefined
+          : { status: filter === "complete" ? "completed" : filter };
+      setSemanticPending(true);
+      setSemanticError(false);
+      searchExperiments(trimmed, 12, statusFilter)
+        .then((response) => {
+          if (cancelled) return;
+          setSemanticIds(response.results.map((result) => result.run_id));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSemanticIds(null);
+          setSemanticError(true);
+        })
+        .finally(() => {
+          if (!cancelled) setSemanticPending(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, filter]);
+
   const rows = useMemo(() => {
-    return source.filter((r) => {
-      if (filter !== "all" && r.status !== filter) return false;
-      if (!query.trim()) return true;
-      const q = query.toLowerCase();
-      return (
-        r.name.toLowerCase().includes(q) ||
-        r.id.toLowerCase().includes(q) ||
-        r.model.toLowerCase().includes(q)
-      );
-    });
-  }, [query, filter, source]);
+    const semanticRank = new Map((semanticIds ?? []).map((id, idx) => [id, idx]));
+    return source
+      .filter((r) => {
+        if (filter !== "all" && r.status !== filter) return false;
+        if (!query.trim()) return true;
+        if (semanticRank.has(r.id)) return true;
+        const q = query.toLowerCase();
+        return (
+          r.name.toLowerCase().includes(q) ||
+          r.id.toLowerCase().includes(q) ||
+          r.model.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        const aRank = semanticRank.get(a.id);
+        const bRank = semanticRank.get(b.id);
+        if (aRank === undefined && bRank === undefined) return 0;
+        if (aRank === undefined) return 1;
+        if (bRank === undefined) return -1;
+        return aRank - bRank;
+      });
+  }, [query, filter, source, semanticIds]);
 
   const sourceEmpty = source.length === 0;
 
@@ -405,8 +458,9 @@ export function ExperimentList({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             leftIcon={<IconSearch size={12} />}
-            containerClassName="w-44"
+            containerClassName="w-56"
             className="!py-1.5 !text-xs"
+            aria-label="Search experiments"
           />
           <Select
             size="sm"
@@ -446,6 +500,13 @@ export function ExperimentList({
       }
       bodyClassName={loading || sourceEmpty ? "px-4 py-4" : "px-0 py-0"}
     >
+      {semanticPending || semanticError ? (
+        <div className="border-b border-white/[0.06] px-4 py-2 text-[11px] text-slate-400">
+          {semanticPending
+            ? "Searching experiment meaning..."
+            : "Semantic search unavailable; using local matches."}
+        </div>
+      ) : null}
       {loading ? (
         <SkeletonRows rows={6} />
       ) : sourceEmpty ? (

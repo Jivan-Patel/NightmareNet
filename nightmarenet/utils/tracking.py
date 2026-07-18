@@ -6,6 +6,8 @@ Supports wandb, tensorboard, and none (no-op) backends via a unified interface.
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,15 @@ class ExperimentTracker:
         self._writer = None
         self._run = None
 
+        self.run_id = str(uuid.uuid4())
+
+        self.lineage: dict[str, Any] = {
+            "run_id": self.run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "config": {},
+            "phases": [],
+        }
+
         if self.backend == "wandb":
             try:
                 import wandb  # type: ignore[import-untyped]
@@ -62,9 +73,7 @@ class ExperimentTracker:
                 self._writer = SummaryWriter(log_dir=log_dir)
                 logger.info("TensorBoard tracking initialized (log_dir=%s).", log_dir)
             except ImportError:
-                logger.warning(
-                    "tensorboard not installed; falling back to no-op tracker."
-                )
+                logger.warning("tensorboard not installed; falling back to no-op tracker.")
                 self.backend = "none"
 
         elif self.backend != "none":
@@ -107,6 +116,16 @@ class ExperimentTracker:
         """
         prefixed = {f"{phase}/{k}": v for k, v in metrics.items() if isinstance(v, (int, float))}
         prefixed["cycle"] = cycle
+
+        self.lineage["phases"].append(
+            {
+                "cycle": cycle,
+                "phase": phase,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "metrics": metrics,
+            }
+        )
+
         self.log_metrics(prefixed)
 
     def log_config(self, config: dict) -> None:
@@ -115,6 +134,7 @@ class ExperimentTracker:
         Args:
             config: Configuration dictionary.
         """
+        self.lineage["config"] = config
         if self.backend == "wandb":
             import wandb  # type: ignore[import-untyped]
 
@@ -131,6 +151,10 @@ class ExperimentTracker:
                 elif isinstance(values, (str, int, float, bool)):
                     flat[section] = values
             self._writer.add_hparams(flat, {})
+
+    def get_lineage(self) -> dict:
+        """Return stored training lineage."""
+        return self.lineage
 
     def finish(self) -> None:
         """Finalize and close the tracking session."""

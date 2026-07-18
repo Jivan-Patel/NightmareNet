@@ -55,7 +55,7 @@ Types: `[Feature]`, `[Bug]`, `[Docs]`, `[Refactor]`, `[Test]`, `[Infra]`
    - Any new dependencies required
 
 3. **Acceptance Criteria** - Concrete, checkable items that define "done". Use checkboxes:
-   ```
+   ```markdown
    - [ ] Function X returns correct output for input Y
    - [ ] Tests added covering the new behavior
    - [ ] Documentation updated
@@ -199,40 +199,56 @@ pip install -e ".[dev,api]"
 
 The `dev` extra brings in `pytest`, `ruff`, `mypy`, and the test fixtures. The `api` extra brings in `fastapi`, `uvicorn`, and `slowapi` for the FastAPI service.
 
-### Pre-commit hooks (recommended)
+### Pre-commit hooks (optional)
+
+There is no `.pre-commit-config.yaml` committed yet. If you want pre-commit locally:
 
 ```bash
 pip install pre-commit
+cat > .pre-commit-config.yaml << 'EOF'
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+EOF
 pre-commit install
 ```
 
-This runs `ruff` and a small set of fast checks on every commit. To run on the whole repo at once:
-
-```bash
-pre-commit run --all-files
-```
+Or simply run `make lint` before committing.
 
 ### Verify the environment
 
+The Makefile mirrors exactly what CI runs — use it instead of memorizing
+individual commands:
+
 ```bash
-pytest --cov=nightmarenet --cov-report=term-missing tests/ -v --tb=short   # 522+ tests, all should pass
-ruff check .                         # zero errors expected
-mypy nightmarenet/                   # type-check the OSS core
+make check          # lint + typecheck + test (what CI runs on every PR)
+make test            # just pytest with coverage
+make lint            # just ruff
+make typecheck       # just mypy
+make format          # auto-fix formatting with ruff format
 ```
 
 If you also touched the dashboard:
 
 ```bash
-cd frontend
-npm install
-npm run build                        # production build
-npm run dev                          # dev server on :3000
+make frontend-build  # production build (cd frontend && npm ci && npm run build)
+make frontend-test   # frontend test suite
+```
+
+Or run everything, Python + frontend:
+
+```bash
+make all
 ```
 
 ### Start the API for ad-hoc testing
 
 ```bash
-uvicorn nightmarenet.api.app:app --reload --port 8000
+uvicorn nightmarenet.api.app:app --reload --port 8000 --env-file .env
 ```
 
 Hit `http://127.0.0.1:8000/api/v1/health` to confirm.
@@ -246,8 +262,8 @@ NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint w
 | Package | Purpose | Allowed dependencies |
 |---------|---------|---------------------|
 | `nightmarenet/` | OSS core: distortions, training loop, evaluation, CLI, FastAPI inference endpoints | `torch`, `transformers`, `pydantic`, `fastapi`, `pyyaml`, `slowapi` (optional) |
-| `nightmarenet_server/` *(future)* | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
-| `frontend/` | Next.js 14 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
+| `nightmarenet_server/` | Hosted platform: auth, multi-tenant DB, Celery workers, billing | OSS core + `sqlalchemy`, `redis`, `celery`, `stripe`, `psycopg2` |
+| `frontend/` | Next.js 16 dashboard, design system, charts | npm ecosystem only; talks to OSS API or hosted API via `NEXT_PUBLIC_API_URL` / rewrites |
 
 > [!IMPORTANT]
 > The OSS core **must not** import anything from `nightmarenet_server`, and **must not** depend on PostgreSQL, Redis, Celery, OAuth providers, or any hosted-only library. If your change touches both, propose the boundary explicitly in the PR description and split the patches.
@@ -272,7 +288,7 @@ NightmareNet has a strict OSS / hosted boundary. Treat it as a hard constraint w
 
 ## Adding a new distortion
 
-Distortions are first-class plugins. The full walkthrough is in [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
+Distortions are first-class plugins. The full walkthrough is in [`docs/plugin_development.md`](docs/plugin_development.md) and [`notebooks/03_custom_distortions.ipynb`](notebooks/03_custom_distortions.ipynb); the short version follows.
 
 ### The signature
 
@@ -365,7 +381,7 @@ Mirror the package layout under `tests/`. At minimum:
 
 All PRs that change user-facing behavior **must** update relevant documentation:
 
-- **API changes** → Update `docs/api/` OpenAPI spec and relevant endpoint docs
+- **API changes** → Run server and check [auto-generated docs](http://localhost:8000/docs); update relevant endpoint descriptions in code
 - **New features** → Add to `README.md` feature table + relevant section
 - **Config changes** → Update `configs/default.yaml` comments + `CLAUDE.md` if applicable
 - **Distortion changes** → Update the README distortion table + `docs/research/paper-draft.md`
@@ -378,20 +394,21 @@ Good documentation is as important as good code. If you're unsure what to update
 
 ## PR checklist
 
-> **CI runs `ruff check .` on every PR and will block merge if there are lint errors.** Run it locally before pushing to avoid failed checks.
+> **Assignment is mandatory.** Do NOT open a PR for an issue you are not assigned to. Request assignment first (see [Issue Assignment Rules](#issue-assignment-rules)). Unassigned PRs will be closed without review.
+
+> **CI runs `make check` on every PR and will block merge if it fails.** Run it locally before pushing to avoid failed checks.
 
 Before requesting review, confirm every box.
 
+- [ ] I am **assigned** to the linked issue.
 - [ ] I have **starred the repo** and **followed [@Adit-Jain-srm](https://github.com/Adit-Jain-srm)**.
-- [ ] `pytest --cov=nightmarenet tests/ -v --tb=short` — green locally.
-- [ ] `ruff check .` — zero errors.
-- [ ] `mypy nightmarenet/` — no new errors.
-- [ ] If frontend changed: `cd frontend && npm run build` succeeds.
+- [ ] `make check` — green locally (runs lint + typecheck + test).
+- [ ] If frontend changed: `make frontend-build` succeeds.
 - [ ] No `from __future__ import annotations` added under `nightmarenet/api/`.
 - [ ] No new `nightmarenet/` import of a hosted-only library (`sqlalchemy`, `redis`, `celery`, `psycopg2`, `stripe`).
 - [ ] New code is type-annotated; new public APIs have Google-style docstrings.
 - [ ] New distortions / metrics / phases are tested for determinism, edge inputs, and registry round-trip.
-- [ ] Documentation updated (see [Section 5](#5-documentation)).
+- [ ] Documentation updated (see [Documentation](#documentation)).
 - [ ] PR description includes:
   - one-paragraph summary
   - link to the issue / discussion
@@ -403,6 +420,42 @@ Before requesting review, confirm every box.
 > **Why acceptance criteria in the PR?** Issues define what "done" looks like. PRs prove it. Copying the acceptance criteria into your PR description creates a verifiable contract: reviewers check the boxes against your code, and incomplete implementations are caught before review begins (not after). If your PR only addresses a subset of the criteria, state that explicitly and link to a follow-up issue for the rest.
 
 CI mirrors the local checks plus a security scan. Merging is blocked on a green CI and one approving review.
+
+### When to request review from maintainer
+
+Only request review (`@Adit-Jain-srm`) when ALL of the following are true:
+
+1. **CI is green** - All Python lint, type-check, and test jobs pass.
+2. **CodeRabbit comments resolved** - Every automated suggestion is either fixed or has a reply explaining why you disagree.
+3. **PR template checklists complete** - All boxes checked in Pre-submission, Quality, and Documentation sections.
+4. **Acceptance criteria met** - Every checkbox from the linked issue is addressed in the PR.
+
+Do NOT request review with failing CI, unresolved bot comments, or unchecked boxes. Premature review requests waste maintainer time and will be dismissed without reading the code.
+
+### CI failed on files you didn't touch?
+
+PR checks run against a **merge of your branch with current `main`** (GitHub's
+`refs/pull/N/merge`), not your branch alone. If `main` itself is broken, every
+open PR turns red — including yours — on code you never changed.
+
+Before debugging, triage in this order:
+
+1. **Check the failing test's file path.** Is it inside your diff
+   (`git diff origin/main --stat`)? If not, it's likely inherited from `main`.
+2. **Check for an open [`[CI]: main branch is failing`](../../issues?q=is%3Aissue+is%3Aopen+label%3Aci-status) issue.**
+   If one exists, `main` is known-red. Wait for it to close — do NOT try to fix
+   `main`'s breakage inside your PR.
+3. **Check `main`'s latest [CI runs](../../actions/workflows/ci.yml?query=branch%3Amain).**
+   If the newest run on `main` is red with the same failure, same conclusion.
+4. **Once `main` is green again**, refresh your PR: merge `main` into your
+   branch (or rebase) and push, or click **Update branch** on the PR page.
+   Note: the **Re-run jobs** button re-tests the *same* merge snapshot
+   (GitHub reuses the original `GITHUB_SHA`), so it will NOT pick up the
+   fixed `main` — you must update the branch to get a fresh merge commit.
+
+If none of the above applies and the failure persists on files outside your
+diff, comment on your PR with the failing test name and your local
+verification (as much of `make check` as applies) — a maintainer will triage.
 
 ---
 
@@ -435,7 +488,7 @@ These are applied by maintainers at merge time based on quality. **Do not reques
 
 6. **One PR per issue.** Don't bundle unrelated fixes. If you find something else while working, open a separate issue for it.
 
-7. **Run CI locally before pushing.** `ruff check .` + `pytest tests/` + `mypy nightmarenet/`. PRs that fail CI on first push suggest you didn't test locally.
+7. **Run CI locally before pushing.** `make check` (lint + typecheck + test). PRs that fail CI on first push suggest you didn't test locally.
 
 8. **Disclose AI usage.** If you used AI tools (Copilot, ChatGPT, Claude, Cursor), state it in the PR description. We welcome AI-assisted contributions. We reject blindly pasted output.
 

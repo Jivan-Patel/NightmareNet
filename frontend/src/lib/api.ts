@@ -582,6 +582,32 @@ export function suggestConfig(body: SuggestConfigRequest): Promise<SuggestConfig
   });
 }
 
+// --- Experiment Search ---
+
+export interface ExperimentSearchResult {
+  run_id: string;
+  relevance_score: number;
+  summary: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ExperimentSearchResponse {
+  results: ExperimentSearchResult[];
+  filters: Record<string, unknown>;
+  backend: string;
+}
+
+export function searchExperiments(
+  query: string,
+  topK = 10,
+  filters?: Record<string, unknown>,
+): Promise<ExperimentSearchResponse> {
+  return apiFetch<ExperimentSearchResponse>("/api/v1/search", {
+    method: "POST",
+    body: JSON.stringify({ query, top_k: topK, filters: filters ?? {} }),
+  });
+}
+
 // --- Adaption Labs: Import & Estimate ---
 
 export function importAndOptimize(body: DataImportRequest): Promise<DataOptimizeResponse> {

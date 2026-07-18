@@ -33,6 +33,8 @@ export const metadata: Metadata = {
   description:
     "Force neural networks to learn invariant structures through Dream & Nightmare cycles. Autonomous training, adversarial stress-testing, and knowledge compression.",
 
+  manifest: "/manifest.json",
+
   keywords: [
     "AI",
     "machine learning",
