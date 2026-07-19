@@ -571,13 +571,14 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
         help="Show the installed nightmarenet version and exit",
     )
-    parser.add_argument(
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Enable verbose output (DEBUG level logging)",
     )
-    parser.add_argument(
+    verbosity_group.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -711,10 +712,6 @@ def main(argv: Optional[list] = None) -> int:
         return 0
 
     # Set up logging based on verbosity flags
-    if getattr(args, "verbose", False) and getattr(args, "quiet", False):
-        print("Error: --verbose and --quiet are mutually exclusive", file=sys.stderr)
-        return 1
-
     log_level = "INFO"
     if getattr(args, "verbose", False):
         log_level = "DEBUG"

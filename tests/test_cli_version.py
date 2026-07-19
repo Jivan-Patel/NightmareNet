@@ -26,32 +26,20 @@ def test_version_flag_prints_installed_version(capsys):
     assert "nightmarenet" in captured.out
 
 
-def test_verbose_flag_parses():
+@pytest.mark.parametrize(
+    "flag,expected_verbose,expected_quiet",
+    [
+        ("--verbose", True, False),
+        ("-v", True, False),
+        ("--quiet", False, True),
+        ("-q", False, True),
+    ],
+)
+def test_verbosity_flags_parse(flag, expected_verbose, expected_quiet):
     parser = build_parser()
-    args = parser.parse_args(["--verbose", "train", "--config", "test.yaml"])
-    assert args.verbose is True
-    assert args.quiet is False
-
-
-def test_verbose_short_flag_parses():
-    parser = build_parser()
-    args = parser.parse_args(["-v", "train", "--config", "test.yaml"])
-    assert args.verbose is True
-    assert args.quiet is False
-
-
-def test_quiet_flag_parses():
-    parser = build_parser()
-    args = parser.parse_args(["--quiet", "train", "--config", "test.yaml"])
-    assert args.quiet is True
-    assert args.verbose is False
-
-
-def test_quiet_short_flag_parses():
-    parser = build_parser()
-    args = parser.parse_args(["-q", "train", "--config", "test.yaml"])
-    assert args.quiet is True
-    assert args.verbose is False
+    args = parser.parse_args([flag, "train", "--config", "test.yaml"])
+    assert args.verbose is expected_verbose
+    assert args.quiet is expected_quiet
 
 
 def test_default_verbosity():
@@ -61,20 +49,11 @@ def test_default_verbosity():
     assert args.quiet is False
 
 
-def test_verbose_and_quiet_mutually_exclusive():
-    from nightmarenet.cli import main
-    import sys
-    from io import StringIO
+def test_verbose_and_quiet_mutually_exclusive(capsys):
+    parser = build_parser()
 
-    # Capture stderr
-    old_stderr = sys.stderr
-    sys.stderr = StringIO()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--verbose", "--quiet", "train", "--config", "test.yaml"])
 
-    result = main(["--verbose", "--quiet", "train", "--config", "test.yaml"])
-
-    sys.stderr.seek(0)
-    error_output = sys.stderr.read()
-    sys.stderr = old_stderr
-
-    assert result == 1
-    assert "mutually exclusive" in error_output
+    captured = capsys.readouterr()
+    assert "not allowed with argument" in captured.err
