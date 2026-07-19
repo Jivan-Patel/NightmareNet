@@ -98,13 +98,24 @@ class AtomicCheckpointer:
                     indent=2,
                 )
 
-            # Atomically rename
-            os.rename(temp_dir, target_dir)
-
-            # Drop sentinel
-            sentinel_path = os.path.join(target_dir, ".complete")
+            # Atomic save: sentinel inside temp, then swap with backup
+            sentinel_path = os.path.join(temp_dir, ".complete")
             with open(sentinel_path, "w") as f:
                 f.write("complete")
+
+            if os.path.exists(target_dir):
+                backup_dir = target_dir + ".bak"
+                if os.path.exists(backup_dir):
+                    shutil.rmtree(backup_dir)
+                os.rename(target_dir, backup_dir)
+                try:
+                    os.rename(temp_dir, target_dir)
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                except Exception:
+                    os.rename(backup_dir, target_dir)
+                    raise
+            else:
+                os.rename(temp_dir, target_dir)
 
             logger.info(f"Atomically saved checkpoint to {target_dir}")
             return target_dir

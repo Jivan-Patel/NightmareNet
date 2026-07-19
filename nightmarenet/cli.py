@@ -31,8 +31,15 @@ def cmd_train(args: argparse.Namespace) -> int:
     with open(config_path) as f:
         config = yaml.safe_load(f) or {}
 
-    from nightmarenet.utils.logging_config import setup_logging_from_config
-    setup_logging_from_config(config)
+    if not isinstance(config, dict):
+        print(f"Error: config file is not a valid YAML mapping: {config_path}", file=sys.stderr)
+        return 1
+
+    try:
+        from nightmarenet.utils.logging_config import setup_logging_from_config
+        setup_logging_from_config(config)
+    except Exception as exc:
+        print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
 
     if getattr(args, "resume", None):
         if "training" not in config:
@@ -210,8 +217,12 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
 
-        from nightmarenet.utils.logging_config import setup_logging_from_config
-        setup_logging_from_config(config)
+        if isinstance(config, dict):
+            try:
+                from nightmarenet.utils.logging_config import setup_logging_from_config
+                setup_logging_from_config(config)
+            except Exception as exc:
+                print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
     else:
         config = {}
 

@@ -1106,12 +1106,13 @@ async def list_runs(
 ):
     """List all pipeline runs with pagination support.
 
-    Returns a paginated list of pipeline runs with metadata for
-    client-side pagination UI. Defaults to first 50 runs.
+    Returns a paginated list of pipeline runs (including completed/historical
+    runs from disk) with metadata for client-side pagination UI.
+    Defaults to first 50 runs.
     """
-    from nightmarenet.pipeline_runner import list_runners
+    from nightmarenet.pipeline_runner import list_all_runs
 
-    all_runs = list_runners()
+    all_runs = list_all_runs(include_historical=True)
     total = len(all_runs)
     page = all_runs[offset:offset + limit]
 
