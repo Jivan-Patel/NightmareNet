@@ -220,6 +220,12 @@ class VisionDistortionRegistry:
             JPEGCompression,
         )
         from nightmarenet.distortions.vision.gaussian_noise import GaussianNoise
+        from nightmarenet.distortions.vision.nightmare import (
+            FGSM,
+            PGD,
+            AdversarialPatch,
+            PixelPerturbation,
+        )
 
         noise_engine = GaussianNoise()
         self.register(
@@ -237,6 +243,10 @@ class VisionDistortionRegistry:
             GeometricTransform(),
             GaussianBlur(),
             JPEGCompression(),
+            FGSM(),
+            PGD(),
+            AdversarialPatch(),
+            PixelPerturbation(),
         ]:
             self.register(
                 engine.name,
