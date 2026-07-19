@@ -221,7 +221,7 @@ export default function PipelineLab() {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
             req.webhooks = parsed
-              .map((wh: any) => ({
+              .map((wh) => ({
                 url: wh.url || "",
                 events: wh.events || [],
               }))
