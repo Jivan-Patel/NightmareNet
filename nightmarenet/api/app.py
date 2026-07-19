@@ -170,9 +170,7 @@ app.add_middleware(APIKeyMiddleware)  # type: ignore[arg-type]
 
 # --- CORS ---
 _cors_origins = [
-    o.strip()
-    for o in os.environ.get("NIGHTMARENET_CORS_ORIGINS", "").split(",")
-    if o.strip()
+    o.strip() for o in os.environ.get("NIGHTMARENET_CORS_ORIGINS", "").split(",") if o.strip()
 ]
 if not _cors_origins:
     logger.warning(
@@ -186,6 +184,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- API Version Header Middleware ---
+@app.middleware("http")
+async def add_api_version_header(request: Request, call_next):
+    """Automatically attach the X-API-Version header to all responses."""
+    response = await call_next(request)
+    response.headers["X-API-Version"] = __version__
+    return response
+
 
 # --- Copilot router (registered here to share the limiter and avoid circular
 #     imports). Heuristic mode works with no extra deps; LLM mode auto-detects
@@ -397,18 +405,16 @@ async def evaluate_robustness(
             }
             scores["nightmare"][str(strength)] = {
                 "similarity": round(_char_similarity(body.text, nightmare_result), 4),
-                "length_ratio": round(
-                    len(nightmare_result) / max(len(body.text), 1), 4
-                ),
+                "length_ratio": round(len(nightmare_result) / max(len(body.text), 1), 4),
             }
 
         # Summary
         avg_dream_sim = sum(v["similarity"] for v in scores["dream"].values()) / max(
             len(scores["dream"]), 1
         )
-        avg_nightmare_sim = sum(
-            v["similarity"] for v in scores["nightmare"].values()
-        ) / max(len(scores["nightmare"]), 1)
+        avg_nightmare_sim = sum(v["similarity"] for v in scores["nightmare"].values()) / max(
+            len(scores["nightmare"]), 1
+        )
 
         summary = (
             f"Dream avg similarity: {avg_dream_sim:.2%}, "
@@ -658,17 +664,11 @@ async def compare_distortions(
         seed = body.seed
 
         # Baseline distortions
-        dream_base = _apply_dream_distortions(
-            body.text, body.baseline_strength, seed=seed
-        )
-        nightmare_base = _apply_nightmare_distortions(
-            body.text, body.baseline_strength, seed=seed
-        )
+        dream_base = _apply_dream_distortions(body.text, body.baseline_strength, seed=seed)
+        nightmare_base = _apply_nightmare_distortions(body.text, body.baseline_strength, seed=seed)
 
         # Challenge distortions
-        dream_challenge = _apply_dream_distortions(
-            body.text, body.challenge_strength, seed=seed
-        )
+        dream_challenge = _apply_dream_distortions(body.text, body.challenge_strength, seed=seed)
         nightmare_challenge = _apply_nightmare_distortions(
             body.text, body.challenge_strength, seed=seed
         )
@@ -691,13 +691,11 @@ async def compare_distortions(
 
         # Resilience = how much similarity drops between baseline and challenge
         dream_drop = max(
-            dream_details["baseline"].similarity
-            - dream_details["challenge"].similarity,
+            dream_details["baseline"].similarity - dream_details["challenge"].similarity,
             0.0,
         )
         nightmare_drop = max(
-            nightmare_details["baseline"].similarity
-            - nightmare_details["challenge"].similarity,
+            nightmare_details["baseline"].similarity - nightmare_details["challenge"].similarity,
             0.0,
         )
         avg_drop = (dream_drop + nightmare_drop) / 2
@@ -1114,7 +1112,7 @@ async def list_runs(
 
     all_runs = list_all_runs(include_historical=True)
     total = len(all_runs)
-    page = all_runs[offset:offset + limit]
+    page = all_runs[offset : offset + limit]
 
     return PipelineRunsListResponse(
         runs=[PipelineStatusResponse(**run) for run in page],

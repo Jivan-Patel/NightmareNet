@@ -911,3 +911,65 @@ def test_missing_compliance_report(tmp_path, monkeypatch):
     response = client.get("/api/v1/compliance/report/does_not_exist")
 
     assert response.status_code == 404
+
+
+class TestAPIVersionHeader:
+    """Test that all API responses include the X-API-Version header."""
+
+    def test_health_has_version_header(self):
+        from nightmarenet import __version__
+
+        response = client.get("/api/v1/health")
+        assert response.status_code == 200
+        assert response.headers.get("X-API-Version") == __version__
+
+    def test_dream_has_version_header(self):
+        from nightmarenet import __version__
+
+        response = client.post(
+            "/api/v1/generate/dream",
+            json={"text": "Hello world.", "strength": 0.3},
+        )
+        assert response.status_code == 200
+        assert response.headers.get("X-API-Version") == __version__
+
+    def test_validation_error_has_version_header(self):
+        from nightmarenet import __version__
+
+        response = client.post(
+            "/api/v1/generate/dream",
+            json={"text": "", "strength": 0.3},  # Empty text triggers validation error
+        )
+        assert response.status_code == 422
+        assert response.headers.get("X-API-Version") == __version__
+
+    def test_unauthorized_has_version_header(self, monkeypatch):
+        import importlib
+
+        from nightmarenet import __version__
+        from nightmarenet.api import app as app_module
+
+        monkeypatch.setenv("NIGHTMARENET_API_KEY", "test-secret-key")
+
+        try:
+            importlib.reload(app_module)
+            from nightmarenet.api.app import app as reloaded_app
+
+            auth_client = TestClient(reloaded_app)
+            response = auth_client.post(
+                "/api/v1/generate/dream",
+                json={"text": "Auth test.", "strength": 0.1},
+            )
+            assert response.status_code == 401
+            assert response.headers.get("X-API-Version") == __version__
+        finally:
+            # Cleanup
+            monkeypatch.delenv("NIGHTMARENET_API_KEY", raising=False)
+            importlib.reload(app_module)
+
+    def test_not_found_has_version_header(self):
+        from nightmarenet import __version__
+
+        response = client.get("/api/v1/nonexistent-route")
+        assert response.status_code == 404
+        assert response.headers.get("X-API-Version") == __version__

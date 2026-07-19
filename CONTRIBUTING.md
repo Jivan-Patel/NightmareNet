@@ -27,9 +27,10 @@ Thank you for helping improve NightmareNet. This project uses a **research-first
 7. [Adding a new distortion](#adding-a-new-distortion)
 8. [Coding standards](#coding-standards)
 9. [Documentation](#documentation)
-10. [PR checklist](#pr-checklist)
-11. [ECSoC'26 Contributors](#ecsoc26-contributors)
-12. [Where to ask for help](#where-to-ask-for-help)
+10. [API Versioning Policy](#api-versioning-policy)
+11. [PR checklist](#pr-checklist)
+12. [ECSoC'26 Contributors](#ecsoc26-contributors)
+13. [Where to ask for help](#where-to-ask-for-help)
 
 ---
 
@@ -389,6 +390,85 @@ All PRs that change user-facing behavior **must** update relevant documentation:
 - **Breaking changes** → Add migration note at the top of PR description
 
 Good documentation is as important as good code. If you're unsure what to update, ask in the PR description and we'll guide you.
+
+---
+
+## API Versioning Policy
+
+NightmareNet follows [Semantic Versioning 2.0.0](https://semver.org/) for its API. The current API version is attached to every response via the `X-API-Version` header.
+
+### When to Update the API Changelog
+
+Contributors **must** update [docs/api-changelog.md](docs/api-changelog.md) whenever a Pull Request introduces any changes to the API endpoints, schemas, authentication, or query parameters.
+
+### Classification of Changes
+
+Changes are classified into three main types:
+
+1. **Breaking Changes (Major)**
+   - Renaming or deleting existing endpoints.
+   - Removing fields from request bodies or response objects.
+   - Changing the data type of existing fields.
+   - Making previously optional fields mandatory.
+   - Tightening rate limits significantly.
+   - Action required: Increment major version (e.g., `0.2.0` -> `1.0.0`), document migration steps, and mark Change Type as `Breaking` in the changelog.
+
+2. **Non-breaking Changes (Minor / Patch)**
+   - Adding new endpoints.
+   - Adding optional fields to request bodies or new fields to response objects.
+   - Non-breaking bug fixes or performance improvements.
+   - Action required: Increment minor/patch version (e.g., `0.2.0` -> `0.2.1`), and mark Change Type as `Added` or `Fixed` in the changelog.
+
+3. **Deprecated / Removed Changes**
+   - Marking an endpoint as deprecated in the OpenAPI docs/schemas before its removal.
+   - Removing deprecated endpoints (Breaking).
+
+### Required Contributor Changelog Template
+
+When submitting a PR that affects the API, contributors must append a new entry to `docs/api-changelog.md` using the template below:
+
+```markdown
+## [<API Version>] - <Release Date (YYYY-MM-DD)>
+
+### Change Type
+- <Breaking / Non-breaking / Deprecated / Added / Fixed / Removed>
+
+### Endpoint(s) Affected
+- `<HTTP Method> <Endpoint Path>` (e.g., `POST /api/v1/generate/dream`)
+
+### Description
+<Detailed description of what changed, why, and the technical impact.>
+
+### Migration Guide
+<Step-by-step instructions for clients to upgrade if the change is breaking. Write "None" if non-breaking.>
+
+### Notes
+<Any extra context, performance considerations, or caveats.>
+```
+
+### Example Entry
+
+```markdown
+## [0.2.0] - 2026-07-01
+
+### Change Type
+- Added
+
+### Endpoint(s) Affected
+- `GET /api/v1/health`
+- `POST /api/v1/generate/dream`
+- `POST /api/v1/generate/nightmare`
+- `POST /api/v1/evaluate/robustness`
+
+### Description
+Initial release of the NightmareNet FastAPI service. Supports generation of dream/nightmare text distortions and evaluation of model robustness.
+
+### Migration Guide
+None.
+
+### Notes
+Initial release.
+```
 
 ---
 
