@@ -90,7 +90,7 @@ class TestPipelineStatusTransitions:
     def test_cancel_flag_persists(self, minimal_config):
         pipe = Pipeline(minimal_config)
         pipe.cancel()
-        assert pipe._cancelled is True
+        assert pipe._context.cancelled is True
 
     def test_failed_ingest_sets_failed(self, minimal_config):
         pipe = Pipeline(minimal_config)

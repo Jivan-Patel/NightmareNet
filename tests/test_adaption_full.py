@@ -354,4 +354,4 @@ class TestPipelinePhaseAwareOptimize:
         pipe = Pipeline(pipeline_config)
         pipe._dataset = MagicMock()
         pipe.optimize()
-        assert pipe._wake_dataset is None
+        assert pipe._context.wake_dataset is None
