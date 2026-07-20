@@ -49,7 +49,9 @@ vi.mock("@/lib/sounds", () => ({
 const { pushMock, testWebhookMock, getWebhooksMock, saveWebhooksMock } = vi.hoisted(() => ({
     pushMock: vi.fn(),
     testWebhookMock: vi.fn(),
-    getWebhooksMock: vi.fn().mockResolvedValue({ webhooks: [] }),
+    getWebhooksMock: vi.fn().mockResolvedValue({
+        webhooks: [{ url: "https://hooks.slack.com/services/T/B/X", events: ["run_complete"] }],
+    }),
     saveWebhooksMock: vi.fn().mockResolvedValue({ webhooks: [] }),
 }));
 
@@ -79,24 +81,28 @@ describe("SettingsPanel component", () => {
         expect(screen.getByText("Generate key")).toBeInTheDocument();
     });
 
-    it("shows the seeded webhook URL on the Notifications tab", () => {
+    it("shows the seeded webhook URL on the Notifications tab", async () => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByText("Notifications"));
-        expect(
-            screen.getByPlaceholderText("https://hooks.slack.com/services/...")
-        ).toBeInTheDocument();
+        await waitFor(() =>
+            expect(
+                screen.getByPlaceholderText("https://hooks.slack.com/services/...")
+            ).toBeInTheDocument()
+        );
     });
 
-    it("shows the empty state after removing the only webhook", () => {
+    it("shows the empty state after removing the only webhook", async () => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByText("Notifications"));
+        await waitFor(() => expect(screen.getByText("Remove")).toBeInTheDocument());
         fireEvent.click(screen.getByText("Remove"));
         expect(screen.getByText(/No webhooks configured/i)).toBeInTheDocument();
     });
 
-    it("adds a second empty webhook row when Add Webhook is clicked", () => {
+    it("adds a second empty webhook row when Add Webhook is clicked", async () => {
         render(<SettingsPanel />);
         fireEvent.click(screen.getByText("Notifications"));
+        await waitFor(() => expect(screen.getByText("Add Webhook")).toBeInTheDocument());
         fireEvent.click(screen.getByText("Add Webhook"));
         expect(
             screen.getAllByPlaceholderText("https://hooks.slack.com/services/...")
@@ -107,6 +113,7 @@ describe("SettingsPanel component", () => {
         testWebhookMock.mockResolvedValueOnce({ status: "success" });
         render(<SettingsPanel />);
         fireEvent.click(screen.getByText("Notifications"));
+        await waitFor(() => expect(screen.getByText("Test Connection")).toBeInTheDocument());
         fireEvent.click(screen.getByText("Test Connection"));
 
         await waitFor(() => expect(testWebhookMock).toHaveBeenCalled());
@@ -121,6 +128,7 @@ describe("SettingsPanel component", () => {
         testWebhookMock.mockRejectedValueOnce(new Error("Connection refused"));
         render(<SettingsPanel />);
         fireEvent.click(screen.getByText("Notifications"));
+        await waitFor(() => expect(screen.getByText("Test Connection")).toBeInTheDocument());
         fireEvent.click(screen.getByText("Test Connection"));
 
         await waitFor(() =>
