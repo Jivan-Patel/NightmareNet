@@ -45,3 +45,9 @@ clean:
 	rm -rf checkpoints logs results/multi_seed
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Cleaned build artifacts."
+
+
+.PHONY: dev
+dev: ## Start API and frontend dev servers in parallel with hot-reload (Ctrl+C to stop)
+	@chmod +x scripts/dev.sh
+	@./scripts/dev.sh

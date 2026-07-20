@@ -142,6 +142,16 @@ When `model.type: "image_classification"` is specified, text-specific configurat
 
 The open-source version of NightmareNet currently supports running the **API** and **Frontend** locally. The `db`, `redis`, and `worker` services are included for future hosted functionality and are disabled by default.
 
+
+### Local Development Setup (Recommended)
+To run both the FastAPI backend and Next.js frontend concurrently in your local environment, use the unified setup command:
+
+```bash
+make dev
+```
+
+> **Note for macOS Users:** The development script uses `wait -n`, which requires **Bash 4.3+**. Since macOS ships with Bash 3.2 by default, you may need to upgrade your bash using Homebrew (`brew install bash`) if the script fails.
+
 ### Default (functional) setup
 
 Start the currently supported services:
