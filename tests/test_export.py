@@ -1,8 +1,8 @@
 import os
 import tempfile
-import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -35,84 +35,94 @@ class DummyHFModel(nn.Module):
         return Output(self.linear(x))
 
 
-class TestModelExport(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.output_dir = self.temp_dir.name
-        self.model = DummyModel()
-        self.hf_model = DummyHFModel()
-        self.dummy_input = {
-            "input_ids": torch.randint(0, 100, (2, 10)),
-            "attention_mask": torch.ones(2, 10, dtype=torch.long),
-        }
+@pytest.fixture
+def export_context():
+    temp_dir = tempfile.TemporaryDirectory()
+    output_dir = temp_dir.name
+    model = DummyModel()
+    hf_model = DummyHFModel()
+    dummy_input = {
+        "input_ids": torch.randint(0, 100, (2, 10)),
+        "attention_mask": torch.ones(2, 10, dtype=torch.long),
+    }
 
-    def tearDown(self):
-        self.temp_dir.cleanup()
+    yield {
+        "output_dir": output_dir,
+        "model": model,
+        "hf_model": hf_model,
+        "dummy_input": dummy_input,
+    }
 
-    def test_export_to_onnx(self):
-        from importlib.util import find_spec
+    temp_dir.cleanup()
 
-        if find_spec("onnx") is None or find_spec("onnxruntime") is None:
-            self.skipTest("ONNX optional dependencies not installed.")
 
-        output_path = os.path.join(self.output_dir, "model.onnx")
-        export_to_onnx(self.model, output_path, self.dummy_input)
-        self.assertTrue(os.path.exists(output_path))
+def test_export_to_onnx(export_context):
+    from importlib.util import find_spec
 
-    def test_export_to_onnx_hf(self):
-        from importlib.util import find_spec
+    if find_spec("onnx") is None or find_spec("onnxruntime") is None:
+        pytest.skip("ONNX optional dependencies not installed.")
 
-        if find_spec("onnx") is None or find_spec("onnxruntime") is None:
-            self.skipTest("ONNX optional dependencies not installed.")
+    output_path = os.path.join(export_context["output_dir"], "model.onnx")
+    export_to_onnx(export_context["model"], output_path, export_context["dummy_input"])
+    assert os.path.exists(output_path)
 
-        output_path = os.path.join(self.output_dir, "model_hf.onnx")
-        export_to_onnx(self.hf_model, output_path, self.dummy_input)
-        self.assertTrue(os.path.exists(output_path))
 
-    def test_export_to_torchscript(self):
-        output_path = os.path.join(self.output_dir, "model.pt")
-        export_to_torchscript(self.model, output_path, self.dummy_input)
-        self.assertTrue(os.path.exists(output_path))
+def test_export_to_onnx_hf(export_context):
+    from importlib.util import find_spec
 
-    def test_export_to_torchscript_hf(self):
-        output_path = os.path.join(self.output_dir, "model_hf.pt")
-        export_to_torchscript(self.hf_model, output_path, self.dummy_input)
-        self.assertTrue(os.path.exists(output_path))
+    if find_spec("onnx") is None or find_spec("onnxruntime") is None:
+        pytest.skip("ONNX optional dependencies not installed.")
 
-    @patch("nightmarenet.export.export_to_onnx")
-    @patch("nightmarenet.distributed.checkpoint.load_model_weights")
-    @patch("transformers.AutoModelForSequenceClassification.from_config")
-    @patch("transformers.AutoTokenizer.from_pretrained")
-    @patch("transformers.AutoConfig.from_pretrained")
-    def test_cli_export_onnx(self, mock_config, mock_tokenizer, mock_model, mock_load, mock_export):
-        import argparse
+    output_path = os.path.join(export_context["output_dir"], "model_hf.onnx")
+    export_to_onnx(export_context["hf_model"], output_path, export_context["dummy_input"])
+    assert os.path.exists(output_path)
 
-        from nightmarenet.cli import cmd_export
 
-        args = argparse.Namespace(
-            command="export",
-            format="onnx",
-            checkpoint="/tmp/dummy_checkpoint",
-            output="/tmp/dummy_output.onnx",
-            model="distilbert-base-uncased",
-            task="seq_classification",
-        )
+def test_export_to_torchscript(export_context):
+    output_path = os.path.join(export_context["output_dir"], "model.pt")
+    export_to_torchscript(export_context["model"], output_path, export_context["dummy_input"])
+    assert os.path.exists(output_path)
 
-        # We need os.path.exists to return True for checkpoint_dir
-        with patch("os.path.exists") as mock_exists:
 
-            def side_effect(path):
-                if path == "/tmp/dummy_checkpoint":
-                    return True
-                return False
+def test_export_to_torchscript_hf(export_context):
+    output_path = os.path.join(export_context["output_dir"], "model_hf.pt")
+    export_to_torchscript(export_context["hf_model"], output_path, export_context["dummy_input"])
+    assert os.path.exists(output_path)
 
-            mock_exists.side_effect = side_effect
 
-            mock_tokenizer_instance = MagicMock()
-            mock_tokenizer_instance.return_value = {"input_ids": torch.tensor([[1]])}
-            mock_tokenizer.return_value = mock_tokenizer_instance
+@patch("nightmarenet.export.export_to_onnx")
+@patch("nightmarenet.distributed.checkpoint.load_model_weights")
+@patch("transformers.AutoModelForSequenceClassification.from_config")
+@patch("transformers.AutoTokenizer.from_pretrained")
+@patch("transformers.AutoConfig.from_pretrained")
+def test_cli_export_onnx(mock_config, mock_tokenizer, mock_model, mock_load, mock_export):
+    import argparse
 
-            ret = cmd_export(args)
-            self.assertEqual(ret, 0)
-            mock_export.assert_called_once()
-            mock_load.assert_called_once()
+    from nightmarenet.cli import cmd_export
+
+    args = argparse.Namespace(
+        command="export",
+        format="onnx",
+        checkpoint="/tmp/dummy_checkpoint",
+        output="/tmp/dummy_output.onnx",
+        model="distilbert-base-uncased",
+        task="seq_classification",
+    )
+
+    with patch("os.path.exists") as mock_exists:
+
+        def side_effect(path):
+            if path == "/tmp/dummy_checkpoint":
+                return True
+            return False
+
+        mock_exists.side_effect = side_effect
+
+        mock_tokenizer_instance = MagicMock()
+        mock_tokenizer_instance.return_value = {"input_ids": torch.tensor([[1]])}
+        mock_tokenizer.return_value = mock_tokenizer_instance
+
+        ret = cmd_export(args)
+        assert ret == 0
+        mock_export.assert_called_once()
+        mock_load.assert_called_once()

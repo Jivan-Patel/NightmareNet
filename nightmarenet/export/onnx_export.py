@@ -6,6 +6,8 @@ from importlib.util import find_spec
 
 import torch
 
+from nightmarenet.export.utils import unwrap_output
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,19 +58,13 @@ def export_to_onnx(
 
         def forward(self, *args, **kwargs):
             out = self.m(*args, **kwargs)
-            if hasattr(out, "logits"):
-                return out.logits
-            if isinstance(out, dict):
-                return out[list(out.keys())[0]]
-            if isinstance(out, tuple):
-                return out[0]
-            return out
+            return unwrap_output(out)
 
     wrapped_model = ONNXWrapper(model)
     wrapped_model.eval()
 
     try:
-        logger.info(f"Exporting model to {output_path} (opset={opset})")
+        logger.info("Exporting model to %s (opset=%s)", output_path, opset)
         torch.onnx.export(
             wrapped_model,
             tuple(dummy_input.values()),
@@ -81,7 +77,7 @@ def export_to_onnx(
             dynamic_axes=dynamic_axes,
         )
     except Exception as e:
-        logger.error(f"Failed to export ONNX model: {e}")
+        logger.error("Failed to export ONNX model: %s", e)
         raise RuntimeError(f"ONNX export failed: {e}") from e
 
     try:
@@ -89,7 +85,7 @@ def export_to_onnx(
         onnx.checker.check_model(onnx_model)
         logger.info("ONNX checker validation passed.")
     except Exception as e:
-        logger.error(f"ONNX validation failed: {e}")
+        logger.error("ONNX validation failed: %s", e)
         raise RuntimeError(f"ONNX validation failed: {e}") from e
 
     logger.info("Running output validation...")
@@ -104,7 +100,7 @@ def export_to_onnx(
         pt_out = pt_outs.cpu().numpy()
 
     max_diff = np.max(np.abs(pt_out - ort_out))
-    logger.info(f"Maximum absolute difference: {max_diff}")
+    logger.info("Maximum absolute difference: %s", max_diff)
 
     if max_diff >= 1e-5:
         raise RuntimeError(f"Output tolerance exceeded. Max diff: {max_diff}")

@@ -3,7 +3,10 @@
 import logging
 import os
 
+import numpy as np
 import torch
+
+from nightmarenet.export.utils import unwrap_output
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +34,18 @@ def export_to_torchscript(model: torch.nn.Module, output_path: str, dummy_input:
             else:
                 out = self.m(*args)
 
-            if hasattr(out, "logits"):
-                return out.logits
-            if isinstance(out, dict):
-                return out[list(out.keys())[0]]
-            if isinstance(out, tuple):
-                return out[0]
-            return out
+            return unwrap_output(out)
 
     wrapped_model = TraceWrapper(model)
     wrapped_model.eval()
     inputs_tuple = tuple(dummy_input.values())
 
     try:
-        logger.info(f"Tracing model for TorchScript export to {output_path}")
+        logger.info("Tracing model for TorchScript export to %s", output_path)
         traced_model = torch.jit.trace(wrapped_model, inputs_tuple, strict=False)
         traced_model.save(output_path)
     except Exception as e:
-        logger.error(f"Failed to export TorchScript model: {e}")
+        logger.error("Failed to export TorchScript model: %s", e)
         raise RuntimeError(f"TorchScript export failed: {e}") from e
 
     logger.info("Running output validation...")
@@ -65,10 +62,8 @@ def export_to_torchscript(model: torch.nn.Module, output_path: str, dummy_input:
         pt_outs = wrapped_model(*inputs_tuple)
         pt_out = pt_outs.cpu().numpy()
 
-    import numpy as np
-
     max_diff = np.max(np.abs(pt_out - ts_out))
-    logger.info(f"Maximum absolute difference: {max_diff}")
+    logger.info("Maximum absolute difference: %s", max_diff)
 
     if max_diff >= 1e-5:
         raise RuntimeError(f"Output tolerance exceeded. Max diff: {max_diff}")
