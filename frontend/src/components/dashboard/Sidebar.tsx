@@ -17,6 +17,7 @@ import {
   IconSparkle,
   IconTrend,
   IconWand,
+  IconX,
 } from "./icons";
 
 export type DashboardSectionKey =
@@ -74,22 +75,38 @@ export interface SidebarProps {
   activeSection: DashboardSectionKey;
   onSectionChange: (key: DashboardSectionKey) => void;
   collapsed?: boolean;
+  mobileMenuOpen?: boolean;
+  onMobileMenuClose?: () => void;
 }
 
 export function Sidebar({
   activeSection,
   onSectionChange,
   collapsed = false,
+  mobileMenuOpen = false,
+  onMobileMenuClose,
 }: SidebarProps) {
   return (
-    <aside
-      className={[
-        "sticky top-0 hidden h-screen shrink-0 border-r border-white/[0.05] bg-void/80 backdrop-blur-xl md:flex md:flex-col",
-        collapsed ? "w-[68px]" : "w-[232px]",
-        "transition-[width] duration-200",
-      ].join(" ")}
-    >
-      <div className="flex h-14 items-center gap-2 border-b border-white/[0.05] px-4">
+    <>
+      {/* Mobile Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity md:hidden"
+          onClick={onMobileMenuClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={[
+          "fixed inset-y-0 left-0 z-40 flex h-full flex-col border-r border-white/[0.05] bg-void/95 backdrop-blur-xl transition-all duration-300 ease-in-out md:sticky md:top-0 md:h-screen md:shrink-0 md:bg-void/80",
+          mobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0 md:shadow-none",
+          collapsed ? "md:w-[68px]" : "md:w-[232px]",
+          "w-[260px]",
+        ].join(" ")}
+        aria-label="Sidebar navigation"
+      >
+        <div className="flex h-14 items-center justify-between gap-2 border-b border-white/[0.05] px-4">
+          <div className="flex items-center gap-2">
         <motion.span
           initial={{ scale: 0.85, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -99,13 +116,22 @@ export function Sidebar({
         >
           <IconShield size={14} />
         </motion.span>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="text-sm font-semibold tracking-tight text-slate-100">NightmareNet</p>
-            <p className="text-[10px] uppercase tracking-widest text-slate-400">Sprint · 03</p>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="text-sm font-semibold tracking-tight text-slate-100">NightmareNet</p>
+              <p className="text-[10px] uppercase tracking-widest text-slate-400">Sprint · 03</p>
+            </div>
+          )}
           </div>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={onMobileMenuClose}
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-slate-400 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neural/50 md:hidden"
+            aria-label="Close sidebar"
+          >
+            <IconX size={20} />
+          </button>
+        </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         {NAV.map((group, gi) => (
@@ -124,7 +150,7 @@ export function Sidebar({
                       type="button"
                       onClick={() => onSectionChange(item.key)}
                       className={[
-                        "group relative flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] cursor-pointer",
+                        "group relative flex w-full items-center gap-2.5 rounded-md px-2 min-h-[44px] md:min-h-0 md:py-1.5 text-left text-[13px] cursor-pointer",
                         "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neural/50",
                         active
                           ? "bg-neural/[0.08] text-neural"
@@ -177,6 +203,7 @@ export function Sidebar({
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
