@@ -12,16 +12,18 @@ export function nextBackoffMs(attempt: number, random: () => number = Math.rando
 }
 
 export function buildRunWsUrl(runId: string): string {
+  const encoded = encodeURIComponent(runId);
   const apiBase = getApiBase();
   if (apiBase) {
     try {
       const u = new URL(apiBase);
       const wsProtocol = u.protocol === "https:" ? "wss:" : "ws:";
-      return `${wsProtocol}//${u.host}/ws/runs/${runId}`;
+      const basePath = u.pathname.replace(/\/+$/, "");
+      return `${wsProtocol}//${u.host}${basePath}/ws/runs/${encoded}`;
     } catch {
       // fall through to window location
     }
   }
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/runs/${runId}`;
+  return `${protocol}//${window.location.host}/ws/runs/${encoded}`;
 }
