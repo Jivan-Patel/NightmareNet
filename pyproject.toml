@@ -63,6 +63,7 @@ tracking = [
     "tensorboard>=2.14.0",
 ]
 mlflow = ["mlflow>=2.0"]
+attacks = ["textattack>=0.3.8"]
 distributed = [
     "accelerate>=0.25.0",
 ]

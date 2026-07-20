@@ -413,6 +413,26 @@ nightmarenet evaluate \
     --strengths 0.1,0.3,0.5,0.7,0.9
 ```
 
+#### TextAttack adversarial evaluation
+
+Run standard adversarial attacks (TextFooler, BERTAttack, TextBugger, PWWS) via [TextAttack](https://github.com/QData/TextAttack):
+
+```bash
+# Install the attacks extra
+pip install 'nightmarenet[attacks]'
+
+# Run TextFooler + BERTAttack evaluation
+nightmarenet evaluate \
+    --model distilbert-base-uncased-finetuned-sst-2-english \
+    --attacks textfooler,bertattack \
+    --num-examples 200 \
+    --device cuda \
+    --dataset sst2
+
+# JSON output for CI
+nightmarenet evaluate --model ./output --attacks textfooler --json
+```
+
 ### `nightmarenet benchmark`
 
 Run a standard benchmark suite (SST-2, AG News, IMDB) with reproducible seeds.

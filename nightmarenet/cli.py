@@ -89,11 +89,60 @@ def cmd_train(args: argparse.Namespace) -> int:
 def cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate text robustness via distortion API logic.
 
+    When ``--attacks`` is supplied, runs TextAttack adversarial evaluation
+    instead of the standard distortion-based evaluation.
+
     When ``--json`` is supplied, emits a single JSON object on stdout suitable
     for CI consumption (e.g. the ``nightmarenet-robustness-check`` composite
     GitHub Action) containing per-strength similarity scores plus an aggregate
     ``robustness_score`` in ``[0, 1]``.
     """
+    json_only = bool(getattr(args, "json", False))
+    dataset = getattr(args, "dataset", None) or "sst2"
+    model_name = getattr(args, "model", None) or ""
+    attacks_arg = getattr(args, "attacks", None)
+
+    # --- TextAttack branch ---
+    if attacks_arg:
+        from nightmarenet.evaluation.textattack_adapter import (
+            _check_textattack_available,
+            format_comparison_table,
+            run_textattack_evaluation,
+        )
+
+        _check_textattack_available()
+
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+        if not json_only:
+            print(f"Loading model: {model_name}")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
+        attack_names = [a.strip() for a in attacks_arg.split(",")]
+        num_examples = getattr(args, "num_examples", 200)
+        device = getattr(args, "device", None)
+
+        results = run_textattack_evaluation(
+            model=model,
+            tokenizer=tokenizer,
+            dataset_name=dataset,
+            attack_names=attack_names,
+            num_examples=num_examples,
+            device=device,
+        )
+
+        if json_only:
+            sys.stdout.write(json.dumps(results))
+            sys.stdout.write("\n")
+        else:
+            print(format_comparison_table(results, dataset_name=dataset))
+
+        has_errors = any("error" in v for v in results.values())
+        return 1 if has_errors else 0
+
+    # --- Standard distortion-based evaluation ---
     from nightmarenet.distortions.registry import get_registry
 
     json_only = bool(getattr(args, "json", False))
@@ -694,6 +743,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Emit a single JSON object on stdout (for CI consumption)",
+    )
+    eval_parser.add_argument(
+        "--attacks",
+        help="Comma-separated TextAttack recipes (e.g. textfooler,bertattack)",
+    )
+    eval_parser.add_argument(
+        "--num-examples", type=int, default=200, help="Number of examples for attack eval"
+    )
+    eval_parser.add_argument(
+        "--device", default=None, help="Device for attack evaluation (e.g. cuda, cpu)"
     )
 
     # benchmark
