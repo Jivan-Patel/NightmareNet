@@ -2,7 +2,10 @@
 
 import copy
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import optuna
 
 from nightmarenet.pipeline import Pipeline
 from nightmarenet.utils.config import load_config
@@ -42,7 +45,7 @@ class HyperparameterOptimizer:
         self.hpo_config = self.base_config.get("hpo", {})
 
         self.study_name = self.hpo_config.get("study_name", "nightmarenet-optimization")
-        # In-memory storage is fine if sqlite is not provided.
+        # Default to a local SQLite database if storage is not configured.
         self.storage = self.hpo_config.get("storage", "sqlite:///nightmarenet_hpo.db")
         self.direction = self.hpo_config.get("direction", "maximize")
         self.n_trials = self.hpo_config.get("n_trials", 20)
@@ -61,7 +64,7 @@ class HyperparameterOptimizer:
             load_if_exists=True,
         )
 
-    def _suggest_parameters(self, trial: optuna.Trial) -> dict:
+    def _suggest_parameters(self, trial: "optuna.Trial") -> dict:
         """Parse search space from config and suggest parameters."""
         trial_params = {}
         for param_key, param_def in self.search_space.items():
@@ -86,7 +89,7 @@ class HyperparameterOptimizer:
                 logger.warning(f"Unknown parameter type '{param_type}' for {param_key}")
         return trial_params
 
-    def _objective(self, trial: optuna.Trial) -> float:
+    def _objective(self, trial: "optuna.Trial") -> float:
         """Optuna objective function."""
         suggested_params = self._suggest_parameters(trial)
 
@@ -121,8 +124,8 @@ class HyperparameterOptimizer:
         except Exception as e:
             if pruned_flag[0] or pipeline._context.cancelled:
                 raise optuna.exceptions.TrialPruned() from e
-            logger.error(f"Trial failed with exception: {e}")
-            raise optuna.exceptions.TrialPruned() from e
+            logger.exception("Trial failed")
+            raise
 
         if pruned_flag[0] or pipeline._context.cancelled:
             raise optuna.exceptions.TrialPruned()

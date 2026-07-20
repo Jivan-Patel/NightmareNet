@@ -617,6 +617,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
 
     try:
         optimizer = HyperparameterOptimizer(str(config_path))
+        if args.n_trials is not None:
+            optimizer.n_trials = args.n_trials
         optimizer.optimize()
     except Exception as e:
         print(f"Optimization failed: {e}", file=sys.stderr)
@@ -857,6 +859,11 @@ def build_parser() -> argparse.ArgumentParser:
         "optimize", help="Run hyperparameter optimization via Optuna"
     )
     optimize_parser.add_argument("--config", required=True, help="YAML config path")
+    optimize_parser.add_argument(
+        "--n-trials",
+        type=int,
+        help="Override the number of optimization trials.",
+    )
 
     # push command parsing mapping
     push_parser = subparsers.add_parser(
