@@ -33,11 +33,19 @@ class TestImportFallback:
 class TestGetRecipe:
     """Test get_recipe validation logic."""
 
-    def test_unsupported_attack_raises_value_error(self):
+    def test_unsupported_attack_raises_value_error(self, monkeypatch):
+        monkeypatch.setattr(
+            "nightmarenet.evaluation.textattack_adapter._check_textattack_available",
+            lambda: None,
+        )
         with pytest.raises(ValueError, match="Unsupported attack.*nonexistent"):
             get_recipe("nonexistent", None)
 
-    def test_all_recipe_names_are_recognized(self):
+    def test_all_recipe_names_are_recognized(self, monkeypatch):
+        monkeypatch.setattr(
+            "nightmarenet.evaluation.textattack_adapter._check_textattack_available",
+            lambda: None,
+        )
         for name in ATTACK_RECIPES:
             with pytest.raises((ImportError, Exception)):
                 get_recipe(name, None)
