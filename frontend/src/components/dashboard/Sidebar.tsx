@@ -1,6 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useEffect, useMemo } from "react";
+import { motion, Reorder } from "framer-motion";
+import { useVisitTracker } from "../../hooks/useVisitTracker";
 import {
   IconActivity,
   IconBeaker,
@@ -71,6 +73,9 @@ const NAV: NavGroup[] = [
   },
 ];
 
+const ALL_ITEMS = NAV.flatMap((g) => g.items);
+const VALID_KEYS = ALL_ITEMS.map((i) => i.key);
+
 export interface SidebarProps {
   activeSection: DashboardSectionKey;
   onSectionChange: (key: DashboardSectionKey) => void;
@@ -86,6 +91,45 @@ export function Sidebar({
   mobileMenuOpen = false,
   onMobileMenuClose,
 }: SidebarProps) {
+  const { isLoaded, totalVisits, visitCounts, customOrder, registerVisit, setCustomOrder } =
+    useVisitTracker(VALID_KEYS);
+
+  useEffect(() => {
+    if (isLoaded) {
+      registerVisit(activeSection);
+    }
+  }, [activeSection, isLoaded, registerVisit]);
+
+  const displayItems = useMemo(() => {
+    if (customOrder.length > 0) {
+      const itemMap = new Map(ALL_ITEMS.map((item) => [item.key, item]));
+      const result = [];
+      for (const key of customOrder) {
+        if (itemMap.has(key)) {
+          result.push(itemMap.get(key)!);
+          itemMap.delete(key);
+        }
+      }
+      for (const item of ALL_ITEMS) {
+        if (itemMap.has(item.key)) {
+          result.push(item);
+        }
+      }
+      return result;
+    }
+
+    if (totalVisits >= 10) {
+      return [...ALL_ITEMS].sort((a, b) => {
+        const countA = visitCounts[a.key] || 0;
+        const countB = visitCounts[b.key] || 0;
+        if (countB !== countA) return countB - countA;
+        return ALL_ITEMS.indexOf(a) - ALL_ITEMS.indexOf(b);
+      });
+    }
+
+    return null;
+  }, [customOrder, totalVisits, visitCounts]);
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -134,18 +178,29 @@ export function Sidebar({
         </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        {NAV.map((group, gi) => (
-          <div key={group.label} className={gi > 0 ? "mt-4" : ""}>
+        {displayItems ? (
+          <div className="mt-2">
             {!collapsed && (
-              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-300">
-                {group.label}
-              </p>
+              <div className="mb-2 px-2 flex items-center justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-300">
+                  Your Top Views
+                </p>
+              </div>
             )}
-            <ul className="space-y-0.5">
-              {group.items.map((item) => {
+            <Reorder.Group
+              axis="y"
+              values={displayItems}
+              onReorder={(newItems) => setCustomOrder(newItems.map((i) => i.key))}
+              className="space-y-0.5"
+            >
+              {displayItems.map((item) => {
                 const active = activeSection === item.key;
                 return (
-                  <li key={item.key}>
+                  <Reorder.Item
+                    key={item.key}
+                    value={item.key}
+                    className="relative"
+                  >
                     <button
                       type="button"
                       onClick={() => onSectionChange(item.key)}
@@ -177,12 +232,62 @@ export function Sidebar({
                         </>
                       )}
                     </button>
-                  </li>
+                  </Reorder.Item>
                 );
               })}
-            </ul>
+            </Reorder.Group>
           </div>
-        ))}
+        ) : (
+          NAV.map((group, gi) => (
+            <div key={group.label} className={gi > 0 ? "mt-4" : ""}>
+              {!collapsed && (
+                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-slate-300">
+                  {group.label}
+                </p>
+              )}
+              <ul className="space-y-0.5">
+                {group.items.map((item) => {
+                  const active = activeSection === item.key;
+                  return (
+                    <li key={item.key}>
+                      <button
+                        type="button"
+                        onClick={() => onSectionChange(item.key)}
+                        className={[
+                          "group relative flex w-full items-center gap-2.5 rounded-md px-2 min-h-[44px] md:min-h-0 md:py-1.5 text-left text-[13px] cursor-pointer",
+                          "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neural/50",
+                          active
+                            ? "bg-neural/[0.08] text-neural"
+                            : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200",
+                        ].join(" ")}
+                        aria-current={active ? "page" : undefined}
+                        title={collapsed ? item.label : undefined}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="sidebar-active"
+                            className="absolute left-0 top-1.5 h-5 w-0.5 rounded-r bg-neural shadow-[0_0_8px_var(--color-neural)]"
+                          />
+                        )}
+                        <span className="flex h-5 w-5 items-center justify-center">{item.icon}</span>
+                        {!collapsed && (
+                          <>
+                            <span className="flex-1 truncate">{item.label}</span>
+                            {item.badge && (
+                              <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
+                                {item.badge}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))
+        )}
       </nav>
 
       <div className="border-t border-white/[0.05] px-2 py-3">
