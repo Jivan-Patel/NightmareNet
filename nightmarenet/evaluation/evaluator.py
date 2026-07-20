@@ -113,9 +113,12 @@ class Evaluator:
         self.device = device
         self.tracker = tracker
         self.eval_config = config.get("evaluation", {})
-        self.enabled_metrics = self.eval_config.get(
-            "metrics", ["recall", "generalization", "robustness", "hallucination"]
+        default_metrics = (
+            ["classification", "robustness"]
+            if config.get("model", {}).get("type") == "image_classification"
+            else ["recall", "generalization", "robustness", "hallucination"]
         )
+        self.enabled_metrics = self.eval_config.get("metrics", default_metrics)
         self.output_dir = self.eval_config.get("output_dir", "results")
         self.significance_alpha = self.eval_config.get("significance_alpha", 0.05)
         os.makedirs(self.output_dir, exist_ok=True)
@@ -393,14 +396,23 @@ class Evaluator:
 
             # Add statistical significance testing for robustness (per-strength scores)
             if metric_name == "robustness":
-                baseline_perplexities = baseline.get("perplexities", [])
-                trained_perplexities = trained.get("perplexities", [])
-                if baseline_perplexities and trained_perplexities:
-                    # Use inverse perplexity as the metric (higher is better).
-                    # Perplexity is lower-is-better, so 1/ppl converts it to higher-is-better
-                    # for the paired statistical test to correctly interpret improvements.
-                    baseline_scores = [1.0 / max(p, 1e-8) for p in baseline_perplexities]
-                    trained_scores = [1.0 / max(p, 1e-8) for p in trained_perplexities]
+                if "accuracies" in baseline:
+                    baseline_scores = baseline.get("accuracies", [])
+                    trained_scores = trained.get("accuracies", [])
+                else:
+                    baseline_perplexities = baseline.get("perplexities", [])
+                    trained_perplexities = trained.get("perplexities", [])
+                    baseline_scores = (
+                        [1.0 / max(p, 1e-8) for p in baseline_perplexities]
+                        if baseline_perplexities
+                        else []
+                    )
+                    trained_scores = (
+                        [1.0 / max(p, 1e-8) for p in trained_perplexities]
+                        if trained_perplexities
+                        else []
+                    )
+                if baseline_scores and trained_scores:
                     significance = _bootstrap_ci(
                         baseline_scores,
                         trained_scores,
@@ -492,6 +504,23 @@ class Evaluator:
                 ]
             )
         metrics = comparison.get("metrics", {})
+
+        if "classification" in metrics and _metric_ok(metrics["classification"]):
+            r = metrics["classification"]
+            lines.extend(
+                [
+                    "### Classification",
+                    "",
+                    "| Metric | Baseline | Trained | Delta |",
+                    "|--------|----------|---------|-------|",
+                ]
+            )
+            for key in ["accuracy", "f1_weighted"]:
+                bl = r.get("baseline", {}).get(key, "N/A")
+                tr = r.get("trained", {}).get(key, "N/A")
+                delta = r.get("deltas", {}).get(key, "N/A")
+                lines.append(f"| {key} | {_fmt(bl)} | {_fmt(tr)} | {_fmt(delta, signed=True)} |")
+            lines.append("")
 
         if "recall" in metrics and _metric_ok(metrics["recall"]):
             r = metrics["recall"]

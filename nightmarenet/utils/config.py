@@ -150,10 +150,10 @@ _SCHEMA: dict[str, tuple] = {
     "model.name": (str, None, None, True),
     "model.type": (str, None, None, True),
     "model.num_labels": (int, 1, 10000, False),
-    "model.max_length": (int, 1, 8192, True),
+    "model.max_length": (int, 1, 8192, False),
     "model.device": (str, None, None, True),
     "dataset.name": (str, None, None, True),
-    "dataset.text_column": (str, None, None, True),
+    "dataset.text_column": (str, None, None, False),
     "dataset.streaming": (bool, None, None, False),
     "training.wake_epochs": (int, 0, 1000, True),
     "training.dream_epochs": (int, 0, 1000, True),
@@ -233,6 +233,14 @@ def validate_config(config: dict) -> list[str]:
         List of validation error messages (empty if valid).
     """
     errors = []
+
+    model_type = _get_nested(config, "model.type")
+    if model_type != "image_classification":
+        if _get_nested(config, "model.max_length") is None:
+            errors.append("Missing required config key: 'model.max_length'")
+        if _get_nested(config, "dataset.text_column") is None:
+            errors.append("Missing required config key: 'dataset.text_column'")
+
     for dotted_key, (expected_type, min_val, max_val, required) in _SCHEMA.items():
         value = _get_nested(config, dotted_key)
         if value is None:

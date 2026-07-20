@@ -339,6 +339,15 @@ class PipelineReportResponse(BaseModel):
     comparison: Optional[dict[str, Any]] = None
 
 
+class PipelineRunsListResponse(BaseModel):
+    """Paginated response for listing pipeline runs."""
+
+    runs: list[PipelineStatusResponse]
+    total: int
+    offset: int
+    limit: int
+
+
 class TestWebhookRequest(BaseModel):
     """Request body for testing a webhook URL."""
 

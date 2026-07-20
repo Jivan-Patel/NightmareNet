@@ -19,13 +19,37 @@ def fgsm_perturb(model: nn.Module, batch: dict, epsilon: float = 0.01) -> dict:
 
     Args:
         model: The student model (used to compute loss for grad).
-        batch: Input batch dict with 'input_ids', 'attention_mask', etc.
-        epsilon: Perturbation magnitude (applied to embeddings).
+        batch: Input batch dict with 'input_ids', 'attention_mask', etc. or 'pixel_values'.
+        epsilon: Perturbation magnitude (applied to embeddings or images).
 
     Returns:
-        Batch with 'inputs_embeds' replaced by adversarially perturbed embeddings.
+        Batch with perturbed inputs.
     """
     model.eval()
+
+    is_vision = "pixel_values" in batch
+    if is_vision:
+        pixel_values = batch["pixel_values"].clone().detach()
+        pixel_values.requires_grad_(True)
+
+        labels = batch.get("labels")
+        if labels is None:
+            with torch.no_grad():
+                outputs = model(pixel_values)
+                logits = outputs.logits if hasattr(outputs, "logits") else outputs
+                labels = logits.max(1)[1]
+
+        outputs = model(pixel_values, labels=labels)
+        loss = outputs.loss
+
+        (pixel_grad,) = torch.autograd.grad(loss, pixel_values)
+        perturbed_pixels = (pixel_values + epsilon * pixel_grad.sign()).detach()
+        perturbed_pixels = torch.clamp(perturbed_pixels, 0.0, 1.0)
+
+        adv_dict = {k: v for k, v in batch.items()}
+        adv_dict["pixel_values"] = perturbed_pixels
+        return adv_dict
+
     input_ids = batch.get("input_ids")
     attention_mask = batch.get("attention_mask")
     labels = batch.get("labels", input_ids)
@@ -96,15 +120,27 @@ def run_distillation(
 
             use_amp = scaler is not None
             with torch.amp.autocast("cuda", enabled=use_amp):
+                is_vision = "pixel_values" in batch
                 # Teacher logits (no grad)
                 with torch.no_grad():
                     teacher_out = teacher(**adv_batch)
-                    teacher_logits = teacher_out.logits  # (B, T, V)
+                    teacher_logits = (
+                        teacher_out.logits
+                        if hasattr(teacher_out, "logits")
+                        else teacher_out
+                    )
 
                 # Student logits
                 student.train()
-                student_out = student(**adv_batch, labels=batch.get("input_ids"))
-                student_logits = student_out.logits  # (B, T, V)
+                if is_vision:
+                    student_out = student(**adv_batch)
+                else:
+                    student_out = student(**adv_batch, labels=batch.get("input_ids"))
+                student_logits = (
+                    student_out.logits
+                    if hasattr(student_out, "logits")
+                    else student_out
+                )
                 task_loss = student_out.loss
 
                 # KL divergence loss with temperature scaling

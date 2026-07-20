@@ -49,7 +49,13 @@ class PreparePhase(Phase):
                 )
                 n_total = len(base_for_split)
 
-                if eval_split_ratio > 0.0 and n_total >= _MIN_EVAL_SAMPLES:
+                model_type = context.config.get("model", {}).get("type", "")
+                if model_type == "image_classification":
+                    wake_data = base_for_split
+                    if context.eval_dataset is None:
+                        context.eval_dataset = base_for_split
+                    context.distortion_fn = lambda x, strength: x
+                elif eval_split_ratio > 0.0 and n_total >= _MIN_EVAL_SAMPLES:
                     n_eval = max(1, int(n_total * eval_split_ratio))
                     n_train = n_total - n_eval
                     wake_data = base_for_split.select(list(range(n_train)))
@@ -60,6 +66,7 @@ class PreparePhase(Phase):
                         n_eval,
                         eval_split_ratio,
                     )
+                    context.distortion_fn = apply_text_distortions
                 else:
                     if eval_split_ratio > 0.0:
                         logger.warning(
@@ -70,8 +77,7 @@ class PreparePhase(Phase):
                         )
                     wake_data = base_for_split
                     context.eval_dataset = base_for_split
-
-                context.distortion_fn = apply_text_distortions
+                    context.distortion_fn = apply_text_distortions
 
                 dream_base = (
                     context.dream_base if context.dream_base is not None else context.dataset

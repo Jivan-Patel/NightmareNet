@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+import torch
 from datasets import IterableDataset, load_dataset
 
 from nightmarenet.utils.validation import (
@@ -232,15 +233,84 @@ class DatasetWrapper:
         return dataset[self.text_column]
 
 
-def load_from_config(config: dict) -> DatasetWrapper:
-    """Create and load a DatasetWrapper from a config dictionary.
+def load_from_config(config: dict) -> Any:
+    """Create and load a DatasetWrapper or VisionDatasetWrapper from a config dictionary.
 
     Args:
         config: Configuration dictionary with 'dataset' and 'seed' keys.
 
     Returns:
-        Loaded DatasetWrapper instance.
+        Loaded dataset wrapper instance.
     """
+    model_type = config.get("model", {}).get("type", "")
+    if model_type == "image_classification":
+        import os
+
+        import torch
+        import torchvision.datasets as datasets
+        import torchvision.transforms as transforms
+
+        dataset_config = config.get("dataset", {})
+        name = dataset_config.get("name", "cifar10").lower()
+        max_samples = dataset_config.get("max_samples")
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+
+        if "cifar10" in name:
+            try:
+                train_dataset = datasets.CIFAR10(
+                    root="./data", train=True, download=True, transform=transform
+                )
+                test_dataset = datasets.CIFAR10(
+                    root="./data", train=False, download=True, transform=transform
+                )
+            except Exception as e:
+                logger.warning("Failed to load CIFAR-10, falling back to FakeData: %s", e)
+                train_dataset = datasets.FakeData(
+                    size=100, image_size=(3, 32, 32), num_classes=10, transform=transform
+                )
+                test_dataset = datasets.FakeData(
+                    size=20, image_size=(3, 32, 32), num_classes=10, transform=transform
+                )
+        elif "imagenet" in name:
+            path = dataset_config.get("path", "./data/imagenet_subset")
+            if os.path.isdir(path):
+                train_dataset = datasets.ImageFolder(
+                    root=os.path.join(path, "train"), transform=transform
+                )
+                test_dataset = datasets.ImageFolder(
+                    root=os.path.join(path, "val"), transform=transform
+                )
+            else:
+                logger.warning(
+                    "ImageNet subset path %s not found. Falling back to FakeData.", path
+                )
+                train_dataset = datasets.FakeData(
+                    size=100, image_size=(3, 224, 224), num_classes=1000, transform=transform
+                )
+                test_dataset = datasets.FakeData(
+                    size=20, image_size=(3, 224, 224), num_classes=1000, transform=transform
+                )
+        else:
+            logger.warning("Unknown dataset %s. Falling back to FakeData.", name)
+            train_dataset = datasets.FakeData(
+                size=100, image_size=(3, 32, 32), num_classes=10, transform=transform
+            )
+            test_dataset = datasets.FakeData(
+                size=20, image_size=(3, 32, 32), num_classes=10, transform=transform
+            )
+
+        if max_samples is not None:
+            train_dataset = torch.utils.data.Subset(
+                train_dataset, range(min(max_samples, len(train_dataset)))
+            )
+            test_limit = min(max_samples // 5 or 1, len(test_dataset))
+            test_dataset = torch.utils.data.Subset(test_dataset, range(test_limit))
+
+        return VisionDatasetWrapper(train_dataset, test_dataset)
+
     dataset_config = config.get("dataset", {})
     return DatasetWrapper(
         dataset_name=dataset_config.get("name", "wikitext"),
@@ -251,3 +321,33 @@ def load_from_config(config: dict) -> DatasetWrapper:
         seed=config.get("seed", 42),
         streaming=dataset_config.get("streaming", False),
     ).load()
+
+
+class VisionItemWrapper(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        from torchvision.transforms.functional import to_tensor
+        self._to_tensor = to_tensor
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img, label = self.dataset[idx]
+        if not isinstance(img, torch.Tensor):
+            img = self._to_tensor(img)
+        return {"pixel_values": img, "labels": label}
+
+
+class VisionDatasetWrapper:
+    def __init__(self, train_data, test_data):
+        self._train_data = VisionItemWrapper(train_data)
+        self._test_data = VisionItemWrapper(test_data)
+
+    @property
+    def train_data(self):
+        return self._train_data
+
+    @property
+    def test_data(self):
+        return self._test_data

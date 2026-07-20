@@ -272,6 +272,13 @@ export interface PipelineReportResponse {
   comparison: Record<string, unknown> | null;
 }
 
+export interface PipelineRunsListResponse {
+  runs: PipelineStatusResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export function createPipeline(
   req: PipelineCreateRequest,
 ): Promise<PipelineStatusResponse> {
@@ -303,6 +310,19 @@ export function getPipelineReport(
 ): Promise<PipelineReportResponse> {
   return apiFetch<PipelineReportResponse>(
     `/api/v1/pipeline/${runId}/report`,
+  );
+}
+
+export function listPipelineRuns(
+  offset?: number,
+  limit?: number,
+): Promise<PipelineRunsListResponse> {
+  const params = new URLSearchParams();
+  if (offset !== undefined) params.append("offset", offset.toString());
+  if (limit !== undefined) params.append("limit", limit.toString());
+  const query = params.toString();
+  return apiFetch<PipelineRunsListResponse>(
+    `/api/v1/pipeline/runs${query ? `?${query}` : ""}`,
   );
 }
 

@@ -26,11 +26,18 @@ except ImportError:
     pass
 
 from nightmarenet import __version__
+from nightmarenet.distortions.dream import (
+    distort as _apply_dream_distortions,
+)  # noqa: E402
+from nightmarenet.distortions.nightmare import (
+    distort as _apply_nightmare_distortions,
+)  # noqa: E402
+from nightmarenet.utils.telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import Body, FastAPI, HTTPException, Request, UploadFile
+    from fastapi import Body, FastAPI, HTTPException, Query, Request, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from slowapi import Limiter
     from slowapi.errors import RateLimitExceeded
@@ -53,6 +60,7 @@ try:
         PipelineCreateRequest,
         PipelineEvaluateRequest,
         PipelineReportResponse,
+        PipelineRunsListResponse,
         PipelineStatusResponse,
         # Adding the missing schemas for validation
         PipelineTrainRequest,
@@ -102,6 +110,44 @@ app = FastAPI(
     redoc_url="/redoc",
     on_startup=[_load_persisted_runs],
 )
+
+
+@app.on_event("startup")
+async def _startup_logging():
+    """Initialize logging from default config on API startup."""
+    from pathlib import Path
+
+    import yaml
+
+    from nightmarenet.utils.logging_config import setup_logging_from_config
+
+    config_path = Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = yaml.safe_load(f) or {}
+        setup_logging_from_config(config)
+        logger.info("Logging initialized from config: %s", config_path)
+
+
+@app.middleware("http")
+async def telemetry_middleware(request: Request, call_next):
+    """Create an OpenTelemetry span for every incoming HTTP request."""
+
+    tracer = get_tracer()
+
+    with tracer.start_as_current_span(f"{request.method} {request.url.path}") as span:
+        span.set_attribute("http.method", request.method)
+        span.set_attribute("http.target", request.url.path)
+
+        try:
+            response = await call_next(request)
+            span.set_attribute("http.status_code", response.status_code)
+            return response
+
+        except Exception as exc:
+            span.record_exception(exc)
+            raise
+
 
 # --- Rate limiting ---
 limiter = Limiter(key_func=get_remote_address)
@@ -156,10 +202,6 @@ register_suggest_routes(app, limiter)
 from nightmarenet.api.data_optimize import register_data_optimize_routes  # noqa: E402
 
 register_data_optimize_routes(app, limiter)
-
-
-from nightmarenet.distortions.dream import distort as _apply_dream_distortions  # noqa: E402
-from nightmarenet.distortions.nightmare import distort as _apply_nightmare_distortions  # noqa: E402
 
 
 def _char_similarity(a: str, b: str) -> float:
@@ -355,16 +397,18 @@ async def evaluate_robustness(
             }
             scores["nightmare"][str(strength)] = {
                 "similarity": round(_char_similarity(body.text, nightmare_result), 4),
-                "length_ratio": round(len(nightmare_result) / max(len(body.text), 1), 4),
+                "length_ratio": round(
+                    len(nightmare_result) / max(len(body.text), 1), 4
+                ),
             }
 
         # Summary
         avg_dream_sim = sum(v["similarity"] for v in scores["dream"].values()) / max(
             len(scores["dream"]), 1
         )
-        avg_nightmare_sim = sum(v["similarity"] for v in scores["nightmare"].values()) / max(
-            len(scores["nightmare"]), 1
-        )
+        avg_nightmare_sim = sum(
+            v["similarity"] for v in scores["nightmare"].values()
+        ) / max(len(scores["nightmare"]), 1)
 
         summary = (
             f"Dream avg similarity: {avg_dream_sim:.2%}, "
@@ -614,11 +658,17 @@ async def compare_distortions(
         seed = body.seed
 
         # Baseline distortions
-        dream_base = _apply_dream_distortions(body.text, body.baseline_strength, seed=seed)
-        nightmare_base = _apply_nightmare_distortions(body.text, body.baseline_strength, seed=seed)
+        dream_base = _apply_dream_distortions(
+            body.text, body.baseline_strength, seed=seed
+        )
+        nightmare_base = _apply_nightmare_distortions(
+            body.text, body.baseline_strength, seed=seed
+        )
 
         # Challenge distortions
-        dream_challenge = _apply_dream_distortions(body.text, body.challenge_strength, seed=seed)
+        dream_challenge = _apply_dream_distortions(
+            body.text, body.challenge_strength, seed=seed
+        )
         nightmare_challenge = _apply_nightmare_distortions(
             body.text, body.challenge_strength, seed=seed
         )
@@ -641,10 +691,13 @@ async def compare_distortions(
 
         # Resilience = how much similarity drops between baseline and challenge
         dream_drop = max(
-            dream_details["baseline"].similarity - dream_details["challenge"].similarity, 0.0
+            dream_details["baseline"].similarity
+            - dream_details["challenge"].similarity,
+            0.0,
         )
         nightmare_drop = max(
-            nightmare_details["baseline"].similarity - nightmare_details["challenge"].similarity,
+            nightmare_details["baseline"].similarity
+            - nightmare_details["challenge"].similarity,
             0.0,
         )
         avg_drop = (dream_drop + nightmare_drop) / 2
@@ -930,21 +983,30 @@ async def create_pipeline(
         "tracking": {"backend": "none"},
         "seed": 42,
         "notifications": {
-            "webhooks": [{"url": wh.url, "events": wh.events} for wh in body.webhooks]
-            if body.webhooks
-            else [],
+            "webhooks": (
+                [{"url": wh.url, "events": wh.events} for wh in body.webhooks]
+                if body.webhooks
+                else []
+            ),
         },
     }
 
-    pipeline = Pipeline(config=config)
-    runner = PipelineRunner(pipeline)
-    try:
-        register_runner(runner)
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=str(e) or "Pipeline runner registry is at capacity",
-        ) from e
+    tracer = get_tracer()
+
+    with tracer.start_as_current_span("pipeline.create"):
+        pipeline = Pipeline(config=config)
+        runner = PipelineRunner(pipeline)
+
+        span = tracer.get_current_span()
+
+        span.set_attribute("pipeline.source_type", body.source_type)
+        try:
+            register_runner(runner)
+        except RuntimeError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=str(e) or "Pipeline runner registry is at capacity",
+            ) from e
 
     # Build ingest kwargs
     ingest_kwargs: dict[str, Any] = {}
@@ -964,7 +1026,11 @@ async def create_pipeline(
     else:
         raise HTTPException(400, f"Unknown source_type: {body.source_type}")
 
-    runner.start(**ingest_kwargs)
+    tracer = get_tracer()
+
+    with tracer.start_as_current_span("pipeline.run"):
+        runner.start(**ingest_kwargs)
+
     return PipelineStatusResponse(**runner.status())
 
 
@@ -1028,16 +1094,34 @@ async def get_pipeline_report(run_id: str):
 
 @app.get(
     "/api/v1/pipeline/runs",
-    response_model=list[PipelineStatusResponse],
-    summary="List all pipeline runs (active and historical)",
+    response_model=PipelineRunsListResponse,
+    summary="List all pipeline runs with pagination",
     tags=["pipeline"],
 )
-async def list_pipeline_runs():
-    """List all pipeline runs, including completed historical runs from disk."""
+@limiter.limit("30/minute")
+async def list_runs(
+    request: Request,
+    offset: int = Query(0, ge=0, description="Number of runs to skip"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of runs to return"),
+):
+    """List all pipeline runs with pagination support.
+
+    Returns a paginated list of pipeline runs (including completed/historical
+    runs from disk) with metadata for client-side pagination UI.
+    Defaults to first 50 runs.
+    """
     from nightmarenet.pipeline_runner import list_all_runs
 
-    runs = list_all_runs(include_historical=True)
-    return [PipelineStatusResponse(**run) for run in runs]
+    all_runs = list_all_runs(include_historical=True)
+    total = len(all_runs)
+    page = all_runs[offset:offset + limit]
+
+    return PipelineRunsListResponse(
+        runs=[PipelineStatusResponse(**run) for run in page],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 _TEST_WEBHOOK_BODY = Body(...)

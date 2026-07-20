@@ -10,6 +10,12 @@ from nightmarenet.distortions.vision.dream import (
     JPEGCompression,
 )
 from nightmarenet.distortions.vision.gaussian_noise import GaussianNoise
+from nightmarenet.distortions.vision.nightmare import (
+    FGSM,
+    PGD,
+    AdversarialPatch,
+    PixelPerturbation,
+)
 from nightmarenet.distortions.vision.utils import to_pil, to_tensor
 
 
@@ -142,3 +148,130 @@ def test_dream_distortions_single_channel():
         distorted = distortion.distort(img, strength=0.5, seed=42)
         assert distorted.shape == (1, 32, 32)
         assert torch.all(distorted >= 0.0) and torch.all(distorted <= 1.0)
+
+
+class MockClassifier(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3 * 32 * 32, 2)
+
+    def forward(self, x):
+        x_flat = x.view(x.size(0), -1)
+        return self.linear(x_flat)
+
+
+def test_nightmare_distortions_registration():
+    """Test that all nightmare distortions are loaded in the registry."""
+    registry = get_vision_registry()
+    expected_names = [
+        "vision_pixel_perturbation",
+        "vision_fgsm",
+        "vision_pgd",
+        "vision_adversarial_patch",
+    ]
+    for name in expected_names:
+        assert name in registry
+
+
+def test_pixel_perturbation_properties():
+    """Test basic properties of PixelPerturbation."""
+    distortion = PixelPerturbation(epsilon=0.1)
+    img = torch.ones(3, 32, 32) * 0.5
+
+    # Strength 0.0 is no-op
+    assert torch.all(distortion.distort(img, strength=0.0) == img)
+
+    # Determinism
+    res1 = distortion.distort(img, strength=0.8, seed=42)
+    res2 = distortion.distort(img, strength=0.8, seed=42)
+    assert torch.all(res1 == res2)
+
+    # Different seeds produce different outputs
+    res3 = distortion.distort(img, strength=0.8, seed=43)
+    assert not torch.all(res1 == res3)
+
+    # L-inf bounds respected: perturbed - img <= eps
+    # eps = strength * epsilon = 0.8 * 0.1 = 0.08
+    diff = torch.abs(res1 - img)
+    assert torch.all(diff <= 0.080001)  # allow tiny float tolerance
+    assert torch.all(res1 >= 0.0) and torch.all(res1 <= 1.0)
+
+
+def test_adversarial_patch_properties():
+    """Test properties of AdversarialPatch."""
+    distortion = AdversarialPatch(patch_size=8)
+    img = torch.ones(3, 32, 32) * 0.5
+
+    # Strength 0.0 is no-op
+    assert torch.all(distortion.distort(img, strength=0.0) == img)
+
+    # Determinism
+    res1 = distortion.distort(img, strength=0.8, seed=42)
+    res2 = distortion.distort(img, strength=0.8, seed=42)
+    assert torch.all(res1 == res2)
+
+    # Check bounds
+    assert torch.all(res1 >= 0.0) and torch.all(res1 <= 1.0)
+
+    # Grayscale handling
+    gray_img = torch.ones(1, 32, 32) * 0.5
+    res_gray = distortion.distort(gray_img, strength=0.8, seed=42)
+    assert res_gray.shape == (1, 32, 32)
+
+
+def test_adversarial_patch_oversized():
+    """Test that patch sizes larger than the image are clamped correctly."""
+    distortion = AdversarialPatch(patch_size=64)
+    img = torch.ones(3, 32, 32) * 0.5
+    res = distortion.distort(img, strength=1.0, seed=42)
+    # Since patch size is clamped to 32x32, the entire image becomes noise
+    assert res.shape == (3, 32, 32)
+
+
+def test_gradient_attacks_fallback():
+    """Test that FGSM and PGD fall back to PixelPerturbation if no model is provided."""
+    img = torch.ones(3, 32, 32) * 0.5
+
+    fgsm = FGSM(model=None, epsilon=0.1)
+    pgd = PGD(model=None, epsilon=0.1)
+    fallback = PixelPerturbation(epsilon=0.1)
+
+    fgsm_res = fgsm.distort(img, strength=0.5, seed=42)
+    pgd_res = pgd.distort(img, strength=0.5, seed=42)
+    fallback_res = fallback.distort(img, strength=0.5, seed=42)
+
+    assert torch.all(fgsm_res == fallback_res)
+    assert torch.all(pgd_res == fallback_res)
+
+
+def test_gradient_attacks_with_model():
+    """Test FGSM and PGD execution with a mock model."""
+    model = MockClassifier()
+    # Set to training mode initially to verify restoration
+    model.train()
+
+    img = torch.ones(3, 32, 32) * 0.5
+    fgsm = FGSM(model=model, epsilon=0.1)
+    pgd = PGD(model=model, epsilon=0.1, steps=5)
+
+    fgsm_res = fgsm.distort(img, strength=1.0)
+    pgd_res = pgd.distort(img, strength=1.0)
+
+    # Output shapes
+    assert fgsm_res.shape == (3, 32, 32)
+    assert pgd_res.shape == (3, 32, 32)
+
+    # Output values bounded
+    assert torch.all(fgsm_res >= 0.0) and torch.all(fgsm_res <= 1.0)
+    assert torch.all(pgd_res >= 0.0) and torch.all(pgd_res <= 1.0)
+
+    # L-inf limits respected (at strength 1.0, eps = 0.1)
+    assert torch.all(torch.abs(fgsm_res - img) <= 0.10001)
+    assert torch.all(torch.abs(pgd_res - img) <= 0.10001)
+
+    # Attacks should modify the image
+    assert not torch.all(fgsm_res == img)
+    assert not torch.all(pgd_res == img)
+
+    # Verify model mode is restored
+    assert model.training

@@ -86,6 +86,31 @@ def quick_robustness_score(
     """
     if len(base_dataset) == 0:
         return 0.0
+
+    is_vision = tokenizer is None or not hasattr(base_dataset, "map")
+    if is_vision:
+        try:
+            indices = list(range(min(subset_size, len(base_dataset))))
+            subset = torch.utils.data.Subset(base_dataset, indices)
+
+            class DummyGenerator:
+                def __init__(self, strength, seed, config):
+                    self.strength = strength
+                    self.seed = seed
+                    self.config = config
+                    self.target_model = model
+
+            from nightmarenet.data.generator import DistortedVisionDataset
+            dummy_gen = DummyGenerator(strength, seed=42, config={})
+            distorted_ds = DistortedVisionDataset(subset, dummy_gen, phase="dream")
+            dataloader = DataLoader(distorted_ds, batch_size=batch_size, shuffle=False)
+
+            metrics = classification_metrics(model, dataloader, device)
+            return metrics.get("accuracy", 0.0)
+        except Exception as e:
+            logger.warning("Error during quick robustness computation: %s", e)
+            return 0.0
+
     try:
         subset = base_dataset.shuffle(seed=42).select(range(min(subset_size, len(base_dataset))))
         distorted = subset.map(
@@ -209,6 +234,16 @@ def recall_score(
     """
     model.eval()
 
+    if tokenizer is None:
+        metrics = classification_metrics(model, dataloader, device)
+        if "error" in metrics:
+            return {"metric": "recall", "token_accuracy": 0.0, "perplexity": float("inf")}
+        return {
+            "metric": "recall",
+            "token_accuracy": metrics["accuracy"],
+            "perplexity": float("inf"),
+        }
+
     if tokenizer.pad_token_id is None:
         fallback = getattr(tokenizer, "eos_token_id", None) or 0
         logger.warning("tokenizer.pad_token_id is None, falling back to %d", fallback)
@@ -311,6 +346,39 @@ def robustness_score(
     """
     if strengths is None:
         strengths = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+    is_vision = tokenizer is None or not hasattr(base_dataset, "map")
+    if is_vision:
+        accuracies = []
+        for strength in strengths:
+            class DummyGenerator:
+                def __init__(self, strength, seed, config):
+                    self.strength = strength
+                    self.seed = seed
+                    self.config = config
+                    self.target_model = model
+
+            from nightmarenet.data.generator import DistortedVisionDataset
+            dummy_gen = DummyGenerator(strength, seed=42, config={})
+            distorted_ds = DistortedVisionDataset(base_dataset, dummy_gen, phase="dream")
+            dataloader = DataLoader(distorted_ds, batch_size=batch_size, shuffle=False)
+
+            metrics = classification_metrics(model, dataloader, device)
+            acc = metrics.get("accuracy", 0.0)
+            accuracies.append(acc)
+            logger.info("Robustness - Strength %.1f: Accuracy = %.4f", strength, acc)
+
+        _trapz_fn = getattr(np, "trapezoid", None)
+        if _trapz_fn is None:
+            _trapz_fn = np.trapz  # type: ignore[attr-defined]
+        auc = float(_trapz_fn(accuracies, strengths))
+
+        return {
+            "metric": "robustness",
+            "strengths": strengths,
+            "accuracies": accuracies,
+            "auc_robustness": _safe_float(auc),
+        }
 
     perplexities = []
 
@@ -467,7 +535,7 @@ def classification_metrics(
             for batch in tqdm(dataloader, desc="Computing classification metrics"):
                 batch = {k: v.to(device) for k, v in batch.items()}
                 outputs = model(**batch)
-                logits = outputs.logits
+                logits = outputs.logits if hasattr(outputs, "logits") else outputs
                 preds = logits.argmax(dim=-1).cpu().numpy()
                 labels = batch["labels"].cpu().numpy()
                 all_preds.extend(preds.tolist())

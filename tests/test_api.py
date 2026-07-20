@@ -708,6 +708,78 @@ class TestOpenAPINewEndpoints:
         data = response.json()
         assert "/api/v1/demo" in data["paths"]
 
+    def test_openapi_includes_pipeline_runs(self):
+        response = client.get("/openapi.json")
+        data = response.json()
+        assert "/api/v1/pipeline/runs" in data["paths"]
+
+
+class TestPipelineRunsEndpoint:
+    """Test the pipeline runs list endpoint with pagination."""
+
+    def test_list_runs_default_pagination(self):
+        """Default pagination returns first 50 runs with metadata."""
+        response = client.get("/api/v1/pipeline/runs")
+        assert response.status_code == 200
+        data = response.json()
+        assert "runs" in data
+        assert "total" in data
+        assert "offset" in data
+        assert "limit" in data
+        assert data["offset"] == 0
+        assert data["limit"] == 50
+        assert isinstance(data["runs"], list)
+        assert isinstance(data["total"], int)
+
+    def test_list_runs_custom_offset(self):
+        """Custom offset skips the specified number of runs."""
+        response = client.get("/api/v1/pipeline/runs?offset=5")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["offset"] == 5
+
+    def test_list_runs_custom_limit(self):
+        """Custom limit returns the specified number of runs."""
+        response = client.get("/api/v1/pipeline/runs?limit=10")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["limit"] == 10
+        assert len(data["runs"]) <= 10
+
+    def test_list_runs_combined_pagination(self):
+        """Combined offset and limit work correctly."""
+        response = client.get("/api/v1/pipeline/runs?offset=2&limit=5")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["offset"] == 2
+        assert data["limit"] == 5
+
+    def test_list_runs_limit_enforced_max(self):
+        """Limit cap of 200 is enforced."""
+        response = client.get("/api/v1/pipeline/runs?limit=300")
+        # Should return 422 for invalid limit
+        assert response.status_code == 422
+
+    def test_list_runs_negative_offset_rejected(self):
+        """Negative offset is rejected."""
+        response = client.get("/api/v1/pipeline/runs?offset=-1")
+        assert response.status_code == 422
+
+    def test_list_runs_zero_limit_rejected(self):
+        """Zero limit is rejected."""
+        response = client.get("/api/v1/pipeline/runs?limit=0")
+        assert response.status_code == 422
+
+    def test_list_runs_response_structure(self):
+        """Each run in the list has the expected structure."""
+        response = client.get("/api/v1/pipeline/runs")
+        assert response.status_code == 200
+        data = response.json()
+        for run in data["runs"]:
+            assert "run_id" in run
+            assert "status" in run
+            assert "is_running" in run
+
 
 class TestDemoEndpoint:
     """Test the interactive demo endpoint (combined dream+nightmare)."""

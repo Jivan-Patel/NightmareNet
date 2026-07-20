@@ -53,6 +53,13 @@ jobs:
           --cov-report=xml
           --cov-report=term-missing
 
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
       - name: Set up Node.js
         if: matrix.python-version == '3.12'
         uses: actions/setup-node@v4
@@ -80,6 +87,16 @@ jobs:
         if: matrix.python-version == '3.12'
         working-directory: frontend
         run: npm run build
+
+      - name: Lint frontend
+        if: matrix.python-version == '3.12'
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type-check frontend
+        if: matrix.python-version == '3.12'
+        working-directory: frontend
+        run: npx tsc --noEmit
 
       - name: Install Playwright Chromium
         if: matrix.python-version == '3.12'
@@ -186,4 +203,3 @@ jobs:
 
       - name: Smoke-test image
         run: echo "Build verified (image not loaded to save disk space)"
-        

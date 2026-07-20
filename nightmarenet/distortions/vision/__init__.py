@@ -7,6 +7,12 @@ from nightmarenet.distortions.vision.dream import (
     GeometricTransform,
     JPEGCompression,
 )
+from nightmarenet.distortions.vision.nightmare import (
+    FGSM,
+    PGD,
+    AdversarialPatch,
+    PixelPerturbation,
+)
 
 __all__ = [
     "ImageDistortion",
@@ -14,4 +20,8 @@ __all__ = [
     "GeometricTransform",
     "GaussianBlur",
     "JPEGCompression",
+    "FGSM",
+    "PGD",
+    "AdversarialPatch",
+    "PixelPerturbation",
 ]
