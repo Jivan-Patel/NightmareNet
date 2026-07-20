@@ -595,38 +595,6 @@ def cmd_transfer(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_optimize(args: argparse.Namespace) -> int:
-    """Run Optuna hyperparameter optimization."""
-    try:
-        from nightmarenet.optimization.hpo import OPTUNA_AVAILABLE, HyperparameterOptimizer
-    except ImportError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-
-    if not OPTUNA_AVAILABLE:
-        print(
-            "Error: Optuna is required for HPO. Install it with: pip install 'nightmarenet[hpo]'",
-            file=sys.stderr,
-        )
-        return 1
-
-    config_path = Path(args.config)
-    if not config_path.exists():
-        print(f"Error: config file not found: {config_path}", file=sys.stderr)
-        return 1
-
-    try:
-        optimizer = HyperparameterOptimizer(str(config_path))
-        if args.n_trials is not None:
-            optimizer.n_trials = args.n_trials
-        optimizer.optimize()
-    except Exception as e:
-        print(f"Optimization failed: {e}", file=sys.stderr)
-        return 1
-
-    return 0
-
-
 def cmd_push(args: argparse.Namespace) -> int:
     """Push a hardened model package structure to HuggingFace Hub."""
     try:
@@ -854,17 +822,6 @@ def build_parser() -> argparse.ArgumentParser:
     transfer_parser.add_argument("--transferred", help="Path to transferred evaluation JSON")
     transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")
 
-    # optimize command parsing mapping
-    optimize_parser = subparsers.add_parser(
-        "optimize", help="Run hyperparameter optimization via Optuna"
-    )
-    optimize_parser.add_argument("--config", required=True, help="YAML config path")
-    optimize_parser.add_argument(
-        "--n-trials",
-        type=int,
-        help="Override the number of optimization trials.",
-    )
-
     # push command parsing mapping
     push_parser = subparsers.add_parser(
         "push", help="Upload a hardened model directory to HuggingFace Hub"
@@ -947,7 +904,6 @@ def main(argv: Optional[list] = None) -> int:
         "distort": cmd_distort,
         "foundation": cmd_foundation,
         "transfer": cmd_transfer,
-        "optimize": cmd_optimize,
         "push": cmd_push,
         "pull": cmd_pull,
         "export": cmd_export,
