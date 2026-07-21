@@ -183,6 +183,16 @@ This starts only:
 - ✅ `api`
 - ✅ `frontend`
 
+### Environment configuration
+
+Copy the example environment files before starting the project:
+
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env
+```
+
+Review the comments in each file and update the values as needed for your local environment.
 ### Hosted profile (planned infrastructure)
 
 To include the optional infrastructure services, enable the `hosted` profile:
