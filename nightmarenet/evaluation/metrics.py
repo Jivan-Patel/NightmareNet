@@ -133,7 +133,6 @@ def categorize_failures_by_distortion(
     return {k: categories[k] for k in sorted_keys}
 
 
-def compute_perplexity(model, dataloader: DataLoader, device="cpu") -> float:
 def compute_confidence_delta(clean_conf: float, dist_conf: float) -> float:
     """Compute confidence delta (degradation) from clean to distorted."""
     return clean_conf - dist_conf
