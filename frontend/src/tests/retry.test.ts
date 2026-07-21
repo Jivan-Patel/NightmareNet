@@ -122,18 +122,18 @@ describe("withRetry", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it("throws after max retries are exhausted", async () => {
+it("throws after max retries are exhausted", async () => {
     const fn = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
 
     const promise = withRetry(fn, { maxRetries: 3, baseDelayMs: 100 });
 
-    // Advance through all retry delays: 100, 200, 400
-    await vi.advanceTimersByTimeAsync(100);
-    await vi.advanceTimersByTimeAsync(200);
-    await vi.advanceTimersByTimeAsync(400);
+    // Advance through all retry delays: 100ms, 200ms, 400ms
+    await Promise.all([
+      vi.advanceTimersByTimeAsync(700),
+      expect(promise).rejects.toThrow("Failed to fetch"),
+    ]);
 
-    await expect(promise).rejects.toThrow("Failed to fetch");
-    expect(fn).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    expect(fn).toHaveBeenCalledTimes(4);
   });
 
   it("ApiError carries status and response", async () => {
