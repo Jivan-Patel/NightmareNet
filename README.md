@@ -201,6 +201,14 @@ This starts:
 
 > **Note:** The `db`, `redis`, and `worker` services are intended for the future hosted platform and are not required by the current open-source API. Running `docker compose up` without a profile starts only the functional services.
 
+> **Tool version files**
+>
+> This repository includes:
+>
+> - `.python-version` (Python 3.12)
+> - `.nvmrc` (Node.js 20)
+>
+> If you use `pyenv`, `asdf`, or `mise`, your Python version can be selected automatically when entering the repository. If you use `nvm`, run `nvm use` to switch to Node.js 20.
 ## What's Inside — 20 Panels of Capability
 
 NightmareNet ships as a unified workspace where every concern gets its own first-class panel. This is a feature-dense, information-rich product — not a sparse landing page.
