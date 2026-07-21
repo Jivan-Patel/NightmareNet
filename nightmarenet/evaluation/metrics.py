@@ -387,6 +387,7 @@ def robustness_score(
     max_length: int = 128,
     batch_size: int = 8,
     device="cpu",
+    export_failures: bool = False,
 ) -> dict:
     """Compute robustness score under increasing distortion strengths.
 
@@ -432,6 +433,27 @@ def robustness_score(
         clean_dl = DataLoader(clean_ds, batch_size=batch_size, shuffle=False)
         clean_metrics = classification_metrics(model, clean_dl, device, return_per_sample=True)
         baseline_confs = clean_metrics.get("per_sample_confs", [])
+        failures_data = []
+        orig_preds = []
+        orig_confs = []
+
+        if export_failures:
+
+            class DummyGenerator0:
+                def __init__(self, strength, seed, config):
+                    self.strength = strength
+                    self.seed = seed
+                    self.config = config
+                    self.target_model = model
+
+            from nightmarenet.data.generator import DistortedVisionDataset
+
+            dummy_gen_0 = DummyGenerator0(0.0, seed=42, config={})
+            clean_ds = DistortedVisionDataset(base_dataset, dummy_gen_0, phase="dream")
+            clean_dl = DataLoader(clean_ds, batch_size=batch_size, shuffle=False)
+            clean_metrics = classification_metrics(model, clean_dl, device, return_per_sample=True)
+            orig_preds = clean_metrics.get("per_sample_preds", [])
+            orig_confs = clean_metrics.get("per_sample_confs", [])
 
         for strength in strengths:
 
@@ -449,8 +471,34 @@ def robustness_score(
             dataloader = DataLoader(distorted_ds, batch_size=batch_size, shuffle=False)
 
             metrics = classification_metrics(model, dataloader, device, return_per_sample=True)
+            metrics = classification_metrics(
+                model, dataloader, device, return_per_sample=export_failures
+            )
             acc = metrics.get("accuracy", 0.0)
             accuracies.append(acc)
+
+            if export_failures:
+                dist_preds = metrics.get("per_sample_preds", [])
+                dist_confs = metrics.get("per_sample_confs", [])
+                for i in range(len(orig_preds)):
+                    if i >= len(dist_preds):
+                        break
+                    failures_data.append(
+                        {
+                            "sample_index": i,
+                            "original_input": "<vision_input>",
+                            "distorted_input": "<vision_distorted>",
+                            "original_prediction": int(orig_preds[i]),
+                            "distorted_prediction": int(dist_preds[i]),
+                            "original_confidence": float(orig_confs[i]),
+                            "distorted_confidence": float(dist_confs[i]),
+                            "confidence_drop": float(orig_confs[i] - dist_confs[i]),
+                            "distortion_type": "vision_distortion",
+                            "distortion_strength": float(strength),
+                            "seed": 42,
+                        }
+                    )
+
             logger.info("Robustness - Strength %.1f: Accuracy = %.4f", strength, acc)
 
             dist_confs = metrics.get("per_sample_confs", [])
@@ -480,6 +528,9 @@ def robustness_score(
             "accuracies": accuracies,
             "auc_robustness": _safe_float(auc),
         }
+        if export_failures:
+            res["per_sample_data"] = failures_data
+        return res
 
         ranked_failures = rank_failures(all_failures)
         res["top_failures"] = ranked_failures[:10]
@@ -488,6 +539,33 @@ def robustness_score(
         return res
 
     perplexities = []
+    failures_data = []
+
+    orig_preds = []
+    orig_confs = []
+    orig_texts = []
+
+    if export_failures:
+        # Run classification on clean dataset to get original preds
+        def _get_preds(dataset):
+            def tok_fn(examples):
+                return tokenizer(
+                    examples[text_column],
+                    truncation=True,
+                    padding="max_length",
+                    max_length=max_length,
+                    return_tensors="pt",
+                )
+
+            tok_ds = dataset.map(tok_fn, batched=True, remove_columns=dataset.column_names)
+            tok_ds.set_format("torch")
+            dl = DataLoader(tok_ds, batch_size=batch_size, shuffle=False)
+            return classification_metrics(model, dl, device, return_per_sample=True)
+
+        clean_metrics = _get_preds(base_dataset)
+        orig_preds = clean_metrics.get("per_sample_preds", [])
+        orig_confs = clean_metrics.get("per_sample_confs", [])
+        orig_texts = [x[text_column] for x in base_dataset]
 
     def _get_ppls(dataset):
         def tok_fn(examples):
@@ -561,6 +639,32 @@ def robustness_score(
                 )
 
         perplexities.append(ppl)
+
+        if export_failures:
+            dist_metrics = classification_metrics(model, dataloader, device, return_per_sample=True)
+            dist_preds = dist_metrics.get("per_sample_preds", [])
+            dist_confs = dist_metrics.get("per_sample_confs", [])
+            dist_texts = [x[text_column] for x in distorted]
+
+            for i in range(len(orig_preds)):
+                if i >= len(dist_preds):
+                    break
+                failures_data.append(
+                    {
+                        "sample_index": i,
+                        "original_input": orig_texts[i],
+                        "distorted_input": dist_texts[i],
+                        "original_prediction": int(orig_preds[i]),
+                        "distorted_prediction": int(dist_preds[i]),
+                        "original_confidence": float(orig_confs[i]),
+                        "distorted_confidence": float(dist_confs[i]),
+                        "confidence_drop": float(orig_confs[i] - dist_confs[i]),
+                        "distortion_type": "text_distortion",
+                        "distortion_strength": float(strength),
+                        "seed": 42,
+                    }
+                )
+
         logger.info("Robustness - Strength %.1f: Perplexity = %.2f", strength, ppl)
 
     # Compute AUC using trapezoidal rule (normalized)
@@ -577,6 +681,9 @@ def robustness_score(
         "perplexities": [_safe_float(p, default=float("inf")) for p in perplexities],
         "auc_robustness": _safe_float(auc),
     }
+    if export_failures:
+        res["per_sample_data"] = failures_data
+    return res
 
     ranked_failures = rank_failures(all_failures)
     res["top_failures"] = ranked_failures[:10]
@@ -707,6 +814,7 @@ def classification_metrics(
                     labels = batch["labels"].cpu().numpy()
                     all_labels.extend(labels.tolist())
                 else:
+                    # Dummy labels if not present
                     all_labels.extend([0] * len(preds))
 
                 all_preds.extend(preds.tolist())
