@@ -5,9 +5,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import logging
+import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +326,7 @@ def _generate_ephemeral_cert() -> tuple[str, str]:
 
     cert_file = tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False)
     key_file = tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False)
+    os.chmod(key_file.name, 0o600)
 
     try:
         cert_file.write(cert_pem)
@@ -340,7 +343,7 @@ def _generate_ephemeral_cert() -> tuple[str, str]:
 def _add_digital_signature(
     pdf_buffer: io.BytesIO,
     report: dict,
-    config: dict | None = None,
+    config: Optional[dict] = None,
 ) -> io.BytesIO:
     """Add a cryptographic digital signature to the PDF using pyHanko.
 
@@ -373,8 +376,9 @@ def _add_digital_signature(
         else:
             if cert_path:
                 logger.warning(
-                    f"Configured signing_cert_path '{cert_path}' not found. "
-                    "Falling back to ephemeral self-signed certificate."
+                    "Configured signing_cert_path '%s' not found. "
+                    "Falling back to ephemeral self-signed certificate.",
+                    cert_path,
                 )
             tmp_cert_path, tmp_key_path = _generate_ephemeral_cert()
             signer = signers.SimpleSigner.load(key_file=tmp_key_path, cert_file=tmp_cert_path)
@@ -392,7 +396,7 @@ def _add_digital_signature(
         return signed_buffer
 
     except Exception as e:
-        logger.warning(f"PDF digital signature failed: {e}. Returning unsigned PDF.")
+        logger.warning("PDF digital signature failed: %s. Returning unsigned PDF.", e)
         pdf_buffer.seek(0)
         return pdf_buffer
 
@@ -408,7 +412,7 @@ def _add_digital_signature(
 def generate_pdf(
     report: dict,
     output_path: str,
-    config: dict | None = None,
+    config: Optional[dict] = None,
 ) -> str:
     """Generate a PDF compliance report with digital signature.
 
