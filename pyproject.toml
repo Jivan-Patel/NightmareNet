@@ -64,6 +64,7 @@ tracking = [
 ]
 mlflow = ["mlflow>=2.0"]
 attacks = ["textattack>=0.3.8"]
+hpo = ["optuna>=3.0.0"]
 distributed = [
     "accelerate>=0.25.0",
 ]

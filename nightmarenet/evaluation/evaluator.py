@@ -203,7 +203,21 @@ class Evaluator:
                     max_length=model_config.get("max_length", 128),
                     batch_size=self.config.get("training", {}).get("batch_size", 8),
                     device=self.device,
+                    export_failures=self.eval_config.get("export_failures", False),
                 )
+                if self.eval_config.get("export_failures", False):
+                    failures = results["robustness"].get("per_sample_data")
+                    if failures:
+                        from nightmarenet.evaluation.failure_export import save_failure_report
+
+                        format = self.eval_config.get("failure_export_format", "json")
+                        threshold = self.eval_config.get("failure_threshold", 0.20)
+                        saved_path = save_failure_report(
+                            failures, self.output_dir, format, threshold
+                        )
+                        if saved_path:
+                            logger.info("Saved failure report to %s", saved_path)
+
                 if self.tracker:
                     self._log_eval(
                         "robustness",
