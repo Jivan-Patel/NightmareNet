@@ -124,7 +124,6 @@ export function AuditTrail() {
                 description: "Configure retention and webhooks in Settings.",
                 variant: "info",
               });
-              console.log("[AuditTrail] empty-state secondary: open settings requested");
             },
           }}
         />

@@ -108,6 +108,7 @@ def test_apply_phase_strategy(mock_logger):
 # DDP Wrapper Tests
 # ============================================================================
 
+
 @mock.patch("nightmarenet.distributed.ddp_wrapper.dist")
 @mock.patch("nightmarenet.distributed.ddp_wrapper.torch.cuda")
 def test_ddp_wrapper_setup_with_torchrun(mock_cuda, mock_dist, monkeypatch):
@@ -168,9 +169,7 @@ def test_ddp_wrapper_wrap_model(mock_torch, mock_dist, monkeypatch):
 
     monkeypatch.setenv("LOCAL_RANK", "0")
     with mock.patch.object(model, "to", return_value=model) as mock_to:
-        with mock.patch(
-            "nightmarenet.distributed.ddp_wrapper.DistributedDataParallel"
-        ) as mock_ddp:
+        with mock.patch("nightmarenet.distributed.ddp_wrapper.DistributedDataParallel") as mock_ddp:
             mock_ddp.return_value = "wrapped_model"
             result = wrapper.wrap_model(model)
             assert result == "wrapped_model"
@@ -209,6 +208,7 @@ def test_ddp_wrapper_teardown(mock_dist):
 # ============================================================================
 # Strategy Tests
 # ============================================================================
+
 
 def test_unwrap_model_simple():
     """Test unwrapping a simple model."""
@@ -275,6 +275,7 @@ def test_strategy_ddp_not_initialized_fallback(mock_logger):
 # Checkpoint Edge Case Tests
 # ============================================================================
 
+
 def test_checkpoint_missing_directory(tmp_path):
     """Test loading from a non-existent checkpoint directory."""
     with pytest.raises(FileNotFoundError, match="not found"):
@@ -329,12 +330,14 @@ def test_checkpoint_missing_model_weights(tmp_path):
     checkpoint_dir.mkdir()
     (checkpoint_dir / ".complete").write_text("complete")
     (checkpoint_dir / "metadata.json").write_text(
-        json.dumps({
-            "version": nightmarenet.__version__,
-            "cycle": 1,
-            "phase": "wake",
-            "config_hash": "abc",
-        })
+        json.dumps(
+            {
+                "version": nightmarenet.__version__,
+                "cycle": 1,
+                "phase": "wake",
+                "config_hash": "abc",
+            }
+        )
     )
 
     with pytest.raises(ValueError, match="does not contain any valid model weights"):
@@ -347,12 +350,14 @@ def test_checkpoint_missing_optimizer_state(tmp_path):
     checkpoint_dir.mkdir()
     (checkpoint_dir / ".complete").write_text("complete")
     (checkpoint_dir / "metadata.json").write_text(
-        json.dumps({
-            "version": nightmarenet.__version__,
-            "cycle": 1,
-            "phase": "wake",
-            "config_hash": "abc",
-        })
+        json.dumps(
+            {
+                "version": nightmarenet.__version__,
+                "cycle": 1,
+                "phase": "wake",
+                "config_hash": "abc",
+            }
+        )
     )
     (checkpoint_dir / "model.pt").write_text("dummy")
 
@@ -376,7 +381,7 @@ def test_checkpoint_checksum_mismatch(tmp_path):
         "cycle": 1,
         "phase": "wake",
         "config_hash": "abc",
-        "file_hashes": {"model.pt": "wrong_hash"}
+        "file_hashes": {"model.pt": "wrong_hash"},
     }
     (checkpoint_dir / "metadata.json").write_text(json.dumps(metadata))
     (checkpoint_dir / "optimizer.pt").write_text("dummy")
@@ -403,7 +408,7 @@ def test_checkpoint_save_overwrites_existing(tmp_path):
         model=model,
         optimizer=optimizer,
         config=config,
-        metrics={"loss": 0.5}
+        metrics={"loss": 0.5},
     )
 
     # Second save (should overwrite)
@@ -414,7 +419,7 @@ def test_checkpoint_save_overwrites_existing(tmp_path):
         model=model,
         optimizer=optimizer,
         config=config,
-        metrics={"loss": 0.3}
+        metrics={"loss": 0.3},
     )
 
     assert target_dir1 == target_dir2
@@ -429,6 +434,7 @@ def test_checkpoint_save_overwrites_existing(tmp_path):
 # ============================================================================
 # Version Compatibility Tests
 # ============================================================================
+
 
 def test_version_compatibility_same():
     """Test version compatibility with identical versions."""
@@ -461,6 +467,7 @@ def test_version_compatibility_invalid_format():
 # ============================================================================
 # Config Hash Determinism Tests
 # ============================================================================
+
 
 def test_config_hash_determinism():
     """Test that config hash is deterministic across calls."""
@@ -498,6 +505,7 @@ def test_config_hash_nested_order_independence():
 # ============================================================================
 # Device Pool Tests
 # ============================================================================
+
 
 def test_device_pool_override():
     """Test device pool with explicit device override."""

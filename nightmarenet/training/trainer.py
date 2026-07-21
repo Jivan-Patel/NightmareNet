@@ -13,6 +13,7 @@ import math
 import os
 import signal
 import threading
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 import torch
@@ -57,6 +58,26 @@ _MODEL_TYPE_MAP = {
 }
 
 
+@dataclass
+class ModelOutput:
+    loss: Optional[torch.Tensor]
+    logits: torch.Tensor
+
+
+class VisionModelWrapper(torch.nn.Module):
+    def __init__(self, base_model, criterion=None):
+        super().__init__()
+        self.base_model = base_model
+        self.criterion = criterion or torch.nn.CrossEntropyLoss()
+
+    def forward(self, pixel_values, labels=None, **kwargs):
+        logits = self.base_model(pixel_values)
+        loss = None
+        if labels is not None:
+            loss = self.criterion(logits, labels)
+        return ModelOutput(loss=loss, logits=logits)
+
+
 def _get_device(config: dict) -> torch.device:
     """Determine the training device from config."""
     device_str = config.get("model", {}).get("device", "auto")
@@ -92,6 +113,10 @@ def _tokenize_dataset(
     label_column: Optional[str] = None,
 ) -> DataLoader:
     """Tokenize a dataset and return a DataLoader."""
+    if tokenizer is None or not hasattr(dataset, "map"):
+        return DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, worker_init_fn=_worker_init_fn
+        )
 
     def tokenize_fn(examples):
         tokenized = tokenizer(
@@ -177,18 +202,36 @@ class Trainer:
                 model_name,
                 self.model_type,
             )
-            model_cls = _MODEL_TYPE_MAP.get(self.model_type)
-            if model_cls is None:
-                raise ValueError(
-                    f"Unknown model type '{self.model_type}'. Supported: {list(_MODEL_TYPE_MAP)}"
-                )
-            try:
-                kwargs = {}
-                if self.model_type == "seq_classification":
-                    kwargs["num_labels"] = self.model_config.get("num_labels", 2)
-                self.model = model_cls.from_pretrained(model_name, **kwargs)
-            except Exception as exc:
-                raise RuntimeError(f"Failed to load model '{model_name}': {exc}") from exc
+            if self.model_type == "image_classification":
+                import torchvision.models as torchvision_models
+
+                model_creator = None
+                for name in dir(torchvision_models):
+                    if name.lower() == model_name.lower():
+                        model_creator = getattr(torchvision_models, name)
+                        break
+                if model_creator is None:
+                    raise ValueError(f"Unknown torchvision model name '{model_name}'.")
+                num_classes = self.model_config.get("num_labels", 10)
+                try:
+                    base_model = model_creator(num_classes=num_classes)
+                except TypeError:
+                    base_model = model_creator()
+                self.model = VisionModelWrapper(base_model)
+            else:
+                model_cls = _MODEL_TYPE_MAP.get(self.model_type)
+                if model_cls is None:
+                    raise ValueError(
+                        f"Unknown model type '{self.model_type}'. "
+                        f"Supported: {list(_MODEL_TYPE_MAP)}"
+                    )
+                try:
+                    kwargs = {}
+                    if self.model_type == "seq_classification":
+                        kwargs["num_labels"] = self.model_config.get("num_labels", 2)
+                    self.model = model_cls.from_pretrained(model_name, **kwargs)
+                except Exception as exc:
+                    raise RuntimeError(f"Failed to load model '{model_name}': {exc}") from exc
         else:
             self.model = model
         self.model.to(self.device)
@@ -199,7 +242,9 @@ class Trainer:
 
             load_model_weights(self.model, resume_from, self.device)
 
-        if tokenizer is None:
+        if self.model_type == "image_classification":
+            self.tokenizer = None
+        elif tokenizer is None:
             has_resume = resume_from and os.path.exists(resume_from)
             tokenizer_load_path = resume_from if has_resume else model_name
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_load_path)
@@ -239,7 +284,7 @@ class Trainer:
         self.lr_scheduler = None
 
         # Reference model for KL regularization (created after wake phase)
-        self.reference_model = None
+        self.reference_model: Optional[torch.nn.Module] = None
 
         # Training history
         self.history: list[dict] = []
@@ -336,7 +381,8 @@ class Trainer:
         )
 
         # Save tokenizer
-        self.tokenizer.save_pretrained(path)
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(path)
 
         # Save training state
         import time
@@ -358,6 +404,11 @@ class Trainer:
         }
         torch.save(state, os.path.join(path, "training_state.pt"))
         logger.info("Checkpoint saved: %s (including training state)", path)
+
+        try:
+            self.tracker.log_artifact(path)
+        except Exception as e:
+            logger.warning("Failed to log checkpoint artifact to tracker: %s", e)
 
         # Post-save validation and complete file hashes update
         meta_path = os.path.join(path, "metadata.json")
@@ -969,8 +1020,12 @@ class Trainer:
             dist.barrier()
 
         if not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0:
-            self.model.save_pretrained(final_path)
-            self.tokenizer.save_pretrained(final_path)
+            if hasattr(self.model, "save_pretrained"):
+                self.model.save_pretrained(final_path)
+            else:
+                torch.save(self.model.state_dict(), os.path.join(final_path, "pytorch_model.bin"))
+            if self.tokenizer is not None:
+                self.tokenizer.save_pretrained(final_path)
             self._save_history()
 
         if dist.is_available() and dist.is_initialized():

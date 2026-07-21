@@ -62,6 +62,8 @@ tracking = [
     "wandb>=0.16.0",
     "tensorboard>=2.14.0",
 ]
+mlflow = ["mlflow>=2.0"]
+attacks = ["textattack>=0.3.8"]
 distributed = [
     "accelerate>=0.25.0",
 ]
@@ -97,6 +99,9 @@ compliance-pdf = [
     "reportlab>=4.0.0",
     "pyhanko>=0.23.0",
     "markdown>=3.5.0",
+export = [
+    "onnx>=1.14.0",
+    "onnxruntime>=1.16.0"
 ]
 
 [project.urls]

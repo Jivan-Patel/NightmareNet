@@ -96,8 +96,8 @@ class WakePhase:
             for step, batch in enumerate(progress):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 # Only causal LM needs labels=input_ids.
-                # Sequence classification already has batch["labels"].
-                if self.model_type != "seq_classification":
+                # Sequence classification and image classification already have batch["labels"].
+                if self.model_type not in ("seq_classification", "image_classification"):
                     batch["labels"] = batch["input_ids"]
                 with torch.amp.autocast("cuda", enabled=use_amp):
                     outputs = self.model(
@@ -269,7 +269,7 @@ class DreamPhase:
             for step, batch in enumerate(progress):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
-                if self.model_type != "seq_classification":
+                if self.model_type not in ("seq_classification", "image_classification"):
                     batch["labels"] = batch["input_ids"]
                 with torch.amp.autocast("cuda", enabled=use_amp):
                     outputs = self.model(**batch)
@@ -462,7 +462,7 @@ class NightmarePhase:
                 for step, batch in enumerate(progress):
                     batch = {k: v.to(self.device) for k, v in batch.items()}
 
-                    if self.model_type != "seq_classification":
+                    if self.model_type not in ("seq_classification", "image_classification"):
                         batch["labels"] = batch["input_ids"]
                     with torch.amp.autocast("cuda", enabled=use_amp):
                         outputs = self.model(**batch)
@@ -646,7 +646,7 @@ class CompressionPhase:
                     batch = {k: v.to(self.device) for k, v in batch.items()}
                     use_amp = self.scaler is not None
                     with torch.amp.autocast("cuda", enabled=use_amp):
-                        if self.model_type != "seq_classification":
+                        if self.model_type not in ("seq_classification", "image_classification"):
                             batch["labels"] = batch["input_ids"]
                         outputs = self.model(**batch)
                         loss = outputs.loss

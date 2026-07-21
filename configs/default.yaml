@@ -87,6 +87,9 @@ compression:
 
 # Evaluation configuration
 evaluation:
+  export_failures: false
+  failure_export_format: "json"
+  failure_threshold: 0.20
   metrics:
     - "recall"
     - "generalization"
@@ -99,6 +102,8 @@ evaluation:
   eval_split_ratio: 0.2         # Fraction of ingested data held out for evaluation; 0.0 disables splitting
   # glue_tasks: null            # null = all tasks; or list: ["sst2", "mrpc"]
   # glue_max_samples: null      # Limit per-task samples for quick runs
+  output_dir: "results"         # Directory for evaluation results and reports
+  output_format: "json"         # "json" or "markdown"
   # Certified robustness (randomized smoothing) — only used if "certification" is
   # uncommented above. Compute-expensive (n forward passes per certified sample), so it
   # is opt-in and budget-capped rather than running by default.
@@ -111,14 +116,13 @@ evaluation:
     subset_size: 50        # Number of samples to certify (controls total compute)
     budget: 100000          # Max total forward passes (n * subset_size); n is reduced
                              # proportionally (with a warning) if this would be exceeded
+    label_column: "label"   # Column name containing ground-truth labels (for seq_classification datasets)
 
 # Experiment tracking
 tracking:
   backend: none        # none|wandb|tensorboard
   project: nightmarenet
   log_dir: logs/runs
-  output_dir: "results"
-  output_format: "json"  # "json" or "markdown"
 
   # Generate EU AI Act Article 15 compliance reports
   compliance_report: false

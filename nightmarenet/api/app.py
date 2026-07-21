@@ -72,6 +72,8 @@ try:
         TrainingConfigResponse,
         TrainingPhasePreview,
         UploadResponse,
+        WebhookSettingsRequest,
+        WebhookSettingsResponse,
         WebhookTestResponse,
     )
 except ImportError as e:
@@ -170,9 +172,7 @@ app.add_middleware(APIKeyMiddleware)  # type: ignore[arg-type]
 
 # --- CORS ---
 _cors_origins = [
-    o.strip()
-    for o in os.environ.get("NIGHTMARENET_CORS_ORIGINS", "").split(",")
-    if o.strip()
+    o.strip() for o in os.environ.get("NIGHTMARENET_CORS_ORIGINS", "").split(",") if o.strip()
 ]
 if not _cors_origins:
     logger.warning(
@@ -186,6 +186,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- API Version Header Middleware ---
+@app.middleware("http")
+async def add_api_version_header(request: Request, call_next):
+    """Automatically attach the X-API-Version header to all responses."""
+    response = await call_next(request)
+    response.headers["X-API-Version"] = __version__
+    return response
+
 
 # --- Copilot router (registered here to share the limiter and avoid circular
 #     imports). Heuristic mode works with no extra deps; LLM mode auto-detects
@@ -218,6 +228,10 @@ def _char_similarity(a: str, b: str) -> float:
 _test_count_cache: dict[str, Any] = {"count": None, "checked_at": 0.0}
 _TEST_CACHE_TTL = 300  # refresh every 5 minutes
 
+
+WEBHOOKS_FILE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "webhooks.json"
+)
 
 def _get_test_count() -> Optional[int]:
     """Return the number of collected tests, cached (optionally, dev-only)."""
@@ -397,18 +411,16 @@ async def evaluate_robustness(
             }
             scores["nightmare"][str(strength)] = {
                 "similarity": round(_char_similarity(body.text, nightmare_result), 4),
-                "length_ratio": round(
-                    len(nightmare_result) / max(len(body.text), 1), 4
-                ),
+                "length_ratio": round(len(nightmare_result) / max(len(body.text), 1), 4),
             }
 
         # Summary
         avg_dream_sim = sum(v["similarity"] for v in scores["dream"].values()) / max(
             len(scores["dream"]), 1
         )
-        avg_nightmare_sim = sum(
-            v["similarity"] for v in scores["nightmare"].values()
-        ) / max(len(scores["nightmare"]), 1)
+        avg_nightmare_sim = sum(v["similarity"] for v in scores["nightmare"].values()) / max(
+            len(scores["nightmare"]), 1
+        )
 
         summary = (
             f"Dream avg similarity: {avg_dream_sim:.2%}, "
@@ -658,17 +670,11 @@ async def compare_distortions(
         seed = body.seed
 
         # Baseline distortions
-        dream_base = _apply_dream_distortions(
-            body.text, body.baseline_strength, seed=seed
-        )
-        nightmare_base = _apply_nightmare_distortions(
-            body.text, body.baseline_strength, seed=seed
-        )
+        dream_base = _apply_dream_distortions(body.text, body.baseline_strength, seed=seed)
+        nightmare_base = _apply_nightmare_distortions(body.text, body.baseline_strength, seed=seed)
 
         # Challenge distortions
-        dream_challenge = _apply_dream_distortions(
-            body.text, body.challenge_strength, seed=seed
-        )
+        dream_challenge = _apply_dream_distortions(body.text, body.challenge_strength, seed=seed)
         nightmare_challenge = _apply_nightmare_distortions(
             body.text, body.challenge_strength, seed=seed
         )
@@ -691,13 +697,11 @@ async def compare_distortions(
 
         # Resilience = how much similarity drops between baseline and challenge
         dream_drop = max(
-            dream_details["baseline"].similarity
-            - dream_details["challenge"].similarity,
+            dream_details["baseline"].similarity - dream_details["challenge"].similarity,
             0.0,
         )
         nightmare_drop = max(
-            nightmare_details["baseline"].similarity
-            - nightmare_details["challenge"].similarity,
+            nightmare_details["baseline"].similarity - nightmare_details["challenge"].similarity,
             0.0,
         )
         avg_drop = (dream_drop + nightmare_drop) / 2
@@ -944,7 +948,7 @@ async def create_pipeline(
     )
 
     # Build config from request
-    config = {
+    config: dict[str, Any] = {
         "model": {
             "name": body.model_name,
             "type": body.model_type,
@@ -990,6 +994,14 @@ async def create_pipeline(
             ),
         },
     }
+
+    if os.path.exists(WEBHOOKS_FILE_PATH):
+        try:
+            with open(WEBHOOKS_FILE_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                config["notifications"]["webhooks"].extend(data.get("webhooks", []))
+        except Exception as e:
+            logger.error("Failed to read webhooks in create_pipeline: %s", e)
 
     tracer = get_tracer()
 
@@ -1093,6 +1105,48 @@ async def get_pipeline_report(run_id: str):
 
 
 @app.get(
+    "/api/v1/settings/webhooks",
+    response_model=WebhookSettingsResponse,
+    summary="Get webhook settings",
+    tags=["settings"],
+)
+async def get_webhook_settings():
+    """Retrieve the current webhook settings."""
+    if not os.path.exists(WEBHOOKS_FILE_PATH):
+        return WebhookSettingsResponse(webhooks=[])
+    try:
+        with open(WEBHOOKS_FILE_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+            return WebhookSettingsResponse(webhooks=data.get("webhooks", []))
+    except Exception as e:
+        logger.error("Failed to read webhooks: %s", e)
+        return WebhookSettingsResponse(webhooks=[])
+
+
+@app.post(
+    "/api/v1/settings/webhooks",
+    response_model=WebhookSettingsResponse,
+    summary="Save webhook settings",
+    tags=["settings"],
+)
+async def save_webhook_settings(
+    request: Request,
+    body: WebhookSettingsRequest,
+):
+    """Save webhook settings."""
+    try:
+        os.makedirs(os.path.dirname(WEBHOOKS_FILE_PATH), exist_ok=True)
+        with open(WEBHOOKS_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"webhooks": [w.model_dump() for w in body.webhooks]}, f, indent=2)
+        return WebhookSettingsResponse(webhooks=body.webhooks)
+    except Exception as e:
+        logger.error("Failed to save webhooks: %s", e)
+        raise HTTPException(
+            status_code=500, detail="Failed to save webhook settings."
+        ) from None
+
+
+@app.get(
     "/api/v1/pipeline/runs",
     response_model=PipelineRunsListResponse,
     summary="List all pipeline runs with pagination",
@@ -1114,7 +1168,7 @@ async def list_runs(
 
     all_runs = list_all_runs(include_historical=True)
     total = len(all_runs)
-    page = all_runs[offset:offset + limit]
+    page = all_runs[offset : offset + limit]
 
     return PipelineRunsListResponse(
         runs=[PipelineStatusResponse(**run) for run in page],

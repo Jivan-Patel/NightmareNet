@@ -40,8 +40,8 @@ def main():
         "--tracker",
         type=str,
         default=None,
-        choices=["none", "wandb", "tensorboard"],
-        help="Override tracking backend (none, wandb, tensorboard).",
+        choices=["none", "wandb", "tensorboard", "mlflow"],
+        help="Override tracking backend (none, wandb, tensorboard, mlflow).",
     )
     args = parser.parse_args()
 
@@ -114,7 +114,7 @@ def main():
             text_column,
             max_length,
             batch_size,
-            label_column
+            label_column,
         )
         dream_dataloader = _tokenize_dataset(
             dream_data, trainer.tokenizer, text_column, max_length, batch_size, label_column

@@ -29,6 +29,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![CI](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml/badge.svg)](https://github.com/Adit-Jain-srm/NightmareNet/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Adit-Jain-srm/NightmareNet/branch/main/graph/badge.svg)](https://codecov.io/gh/Adit-Jain-srm/NightmareNet)
 [![Tests](https://img.shields.io/badge/tests-660%2B%20passing-brightgreen)](#testing)
 [![Python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)](#installation)
 
@@ -96,9 +97,72 @@ Run the full Wake -> Dream -> Nightmare -> Compress cycle on SST-2 in under 10 m
 > Dev hardware target is a 4 GB VRAM laptop GPU (RTX 3050 Ti). DistilBERT and DistilGPT-2 fit comfortably; GPT-2 (124M) requires gradient checkpointing + FP16.
 
 ---
+
+## Tutorials
+
+Learn how to use, extend, and deploy NightmareNet through our step-by-step tutorials:
+
+*   [Tutorial 1: Getting Started](docs/tutorials/getting-started.md) — Install NightmareNet, configure your first project, and run your first model robustness evaluation in under 5 minutes.
+*   [Tutorial 2: Custom Distortions](docs/tutorials/custom-distortions.md) — Implement class-based or decorator-based custom perturbation engines and plug them into the registry.
+*   [Tutorial 3: Interpreting Results & Compliance](docs/tutorials/interpreting-results.md) — Understand robustness curves (AUC), generalization metrics, and generate signed EU AI Act compliance reports.
+*   [Tutorial 4: Vision Pipeline](docs/tutorials/vision-pipeline.md) — Load images, apply vision distortions (color jitter, noise, FGSM/PGD attacks), and evaluate vision models.
+*   [Tutorial 5: Deployment](docs/tutorials/deployment.md) — Configure, run, and scale production-grade docker containers, configure keys, and integrate alerts.
+
+Client developers can also use the committed OpenAPI spec at [`docs/api/openapi.json`](docs/api/openapi.json) (regenerate with `make openapi`).
+
+---
+
+## Computer Vision Support
+
+NightmareNet supports cyclic adversarial robustness training for image classification models (such as ResNet-18) on torchvision datasets (such as CIFAR-10).
+
+To run the computer vision sleep-cycle pipeline:
+```bash
+nightmarenet train --config configs/benchmark_cifar10.yaml
+```
+
+### Sleep Phases for Vision
+
+```mermaid
+flowchart LR
+    subgraph Training Cycle
+        Wake --> Dream --> Nightmare --> Compress
+    end
+    Compress --> Evaluation
+```
+
+When `model.type: "image_classification"` is specified, text-specific configurations like `max_length` and `text_column` are automatically bypassed, and the training phases adapt to image tensors:
+* **Wake Phase**: Supervised cross-entropy training on clean image tensors.
+* **Dream Phase**: Stochastic application of mild, non-adversarial image distortions (Color Jitter, Geometric Transform, Gaussian Blur, and JPEG Compression) to boost invariance.
+* **Nightmare Phase**: Adversarial training with custom target model gradient projection (FGSM and PGD pixel perturbations).
+* **Compress Phase**: Magnitude weight pruning and RSLAD-style robust distillation directly on perturbed input images.
+* **Evaluation**: Calculates clean classification accuracy and Area Under Curve (AUC) accuracy across increasing distortion strengths.
+
+---
+
 ## Running the API + Dashboard Locally (Docker)
 
 The open-source version of NightmareNet currently supports running the **API** and **Frontend** locally. The `db`, `redis`, and `worker` services are included for future hosted functionality and are disabled by default.
+
+### Pre-built images (GHCR)
+
+Release tags publish multi-arch images to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/adit-jain-srm/nightmarenet-api:latest
+docker pull ghcr.io/adit-jain-srm/nightmarenet-worker:latest
+```
+
+Images are also tagged with the release version (e.g. `v0.2.1`) and a short commit SHA (`sha-<hash>`).
+
+### Local Development Setup (Recommended)
+To run both the FastAPI backend and Next.js frontend concurrently in your local environment, use the unified setup command:
+
+```bash
+make dev
+```
+
+> **Note for macOS Users:** The development script uses `wait -n`, which requires **Bash 4.3+**. Since macOS ships with Bash 3.2 by default, you may need to upgrade your bash using Homebrew (`brew install bash`) if the script fails.
 
 ### Default (functional) setup
 
@@ -179,6 +243,7 @@ Measured on RTX 3050 Ti (4 GB VRAM), DistilBERT-base-uncased, 500 train / 200 ev
 
 
 ### Measured Benchmarks (v1)
+
 | Model | Method | Clean Acc | TextFooler Acc | BertAttack Acc | Robustness Score | Params |
 |-------|--------|-----------|----------------|----------------|------------------|--------|
 | DistilBERT | Standard FT (baseline) | 90.5% | 23.1% | 17.6% | 0.412 | 66.0M |
@@ -361,6 +426,26 @@ nightmarenet evaluate \
     --strengths 0.1,0.3,0.5,0.7,0.9
 ```
 
+#### TextAttack adversarial evaluation
+
+Run standard adversarial attacks (TextFooler, BERTAttack, TextBugger, PWWS) via [TextAttack](https://github.com/QData/TextAttack):
+
+```bash
+# Install the attacks extra
+pip install 'nightmarenet[attacks]'
+
+# Run TextFooler + BERTAttack evaluation
+nightmarenet evaluate \
+    --model distilbert-base-uncased-finetuned-sst-2-english \
+    --attacks textfooler,bertattack \
+    --num-examples 200 \
+    --device cuda \
+    --dataset sst2
+
+# JSON output for CI
+nightmarenet evaluate --model ./output --attacks textfooler --json
+```
+
 ### `nightmarenet benchmark`
 
 Run a standard benchmark suite (SST-2, AG News, IMDB) with reproducible seeds.
@@ -403,6 +488,7 @@ model_dir = pull_model(
     local_dir="./models/hardened-robust-model"
 )
 print(f"Model successfully loaded at: {model_dir}")
+```
 
 ---
 

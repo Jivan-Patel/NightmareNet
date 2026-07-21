@@ -34,8 +34,7 @@ class PixelPerturbation(ImageDistortion):
         # Generate uniform random noise in [-eps, eps]
         if gen is not None:
             noise = (
-                torch.rand(image.shape, generator=gen, device=image.device, dtype=image.dtype)
-                * 2.0
+                torch.rand(image.shape, generator=gen, device=image.device, dtype=image.dtype) * 2.0
                 - 1.0
             ) * eps
         else:
@@ -87,9 +86,10 @@ class FGSM(ImageDistortion):
 
             with torch.enable_grad():
                 outputs = self.model(input_tensor)
+                logits = outputs.logits if hasattr(outputs, "logits") else outputs
                 # Predict pseudo-label if true label not provided
-                target = outputs.max(1)[1]
-                loss = self.criterion(outputs, target)
+                target = logits.max(1)[1]
+                loss = self.criterion(logits, target)
 
                 grad = torch.autograd.grad(
                     loss, input_tensor, retain_graph=False, create_graph=False
@@ -156,7 +156,8 @@ class PGD(ImageDistortion):
             input_tensor = image.clone().detach().unsqueeze(0)
             with torch.no_grad():
                 outputs = self.model(input_tensor)
-                target = outputs.max(1)[1]
+                logits = outputs.logits if hasattr(outputs, "logits") else outputs
+                target = logits.max(1)[1]
 
             x_adv = image.clone().detach()
 
@@ -166,7 +167,8 @@ class PGD(ImageDistortion):
 
                 with torch.enable_grad():
                     outputs = self.model(x_adv_batch)
-                    loss = self.criterion(outputs, target)
+                    logits = outputs.logits if hasattr(outputs, "logits") else outputs
+                    loss = self.criterion(logits, target)
                     grad = torch.autograd.grad(
                         loss, x_adv_batch, retain_graph=False, create_graph=False
                     )[0]

@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class ExperimentTracker:
-    """Unified experiment tracker wrapping wandb/tensorboard/none backends.
+    """Unified experiment tracker wrapping wandb/tensorboard/none/mlflow backends.
 
     Args:
-        backend: Tracking backend name: "none", "wandb", or "tensorboard".
+        backend: Tracking backend name: "none", "wandb", "tensorboard", or "mlflow".
         project: Project name for the tracking platform.
         run_name: Optional name for this experiment run.
         config: Optional hyperparameter config to log.
@@ -36,8 +36,8 @@ class ExperimentTracker:
         self.project = project
         self.run_name = run_name
         self._step = 0
-        self._writer = None
-        self._run = None
+        self._writer: Any = None
+        self._run: Any = None
 
         self.run_id = str(uuid.uuid4())
 
@@ -76,6 +76,25 @@ class ExperimentTracker:
                 logger.warning("tensorboard not installed; falling back to no-op tracker.")
                 self.backend = "none"
 
+        elif self.backend == "mlflow":
+            try:
+                import mlflow
+
+                tracking_cfg = config.get("tracking", {}) if config else {}
+                tracking_uri = tracking_cfg.get("tracking_uri")
+                experiment_name = tracking_cfg.get("experiment", self.project)
+                if tracking_uri:
+                    mlflow.set_tracking_uri(tracking_uri)
+                mlflow.set_experiment(experiment_name)
+                self._run = mlflow.start_run(run_name=self.run_name)
+                logger.info("MLflow tracking initialized (experiment=%s).", experiment_name)
+            except ImportError:
+                logger.warning("mlflow not installed; falling back to no-op tracker.")
+                self.backend = "none"
+            except Exception as exc:
+                logger.warning("Failed to init mlflow: %s; falling back to no-op.", exc)
+                self.backend = "none"
+
         elif self.backend != "none":
             logger.warning("Unknown tracking backend '%s'; using no-op.", self.backend)
             self.backend = "none"
@@ -105,6 +124,15 @@ class ExperimentTracker:
             for key, value in metrics.items():
                 if isinstance(value, (int, float)):
                     self._writer.add_scalar(key, value, global_step=step)
+        elif self.backend == "mlflow":
+            try:
+                import mlflow
+
+                num_metrics = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+                if num_metrics:
+                    mlflow.log_metrics(num_metrics, step=step)
+            except Exception as exc:
+                logger.warning("Failed to log metrics to MLflow: %s", exc)
 
     def log_phase(self, cycle: int, phase: str, metrics: dict[str, Any]) -> None:
         """Log metrics for a specific training phase.
@@ -152,6 +180,45 @@ class ExperimentTracker:
                     flat[section] = values
             self._writer.add_hparams(flat, {})
 
+        elif self.backend == "mlflow":
+            try:
+                import mlflow
+
+                flat = {}
+                for section, values in config.items():
+                    if isinstance(values, dict):
+                        for k, v in values.items():
+                            if isinstance(v, (str, int, float, bool)):
+                                flat[f"{section}/{k}"] = v
+                    elif isinstance(values, (str, int, float, bool)):
+                        flat[section] = values
+                mlflow.log_params(flat)
+            except Exception as exc:
+                logger.warning("Failed to log config to MLflow: %s", exc)
+
+    def log_artifact(self, path: str) -> None:
+        """Log an artifact file or directory.
+
+        Args:
+            path: Local path to the file or directory.
+        """
+        if self.backend == "mlflow":
+            try:
+                import os
+
+                import mlflow
+
+                if os.path.isdir(path):
+                    # Preserve the directory name to prevent root-level overwrites
+                    artifact_path = os.path.basename(os.path.normpath(path)) or None
+                    mlflow.log_artifacts(path, artifact_path=artifact_path)
+                elif os.path.exists(path):
+                    mlflow.log_artifact(path)
+                else:
+                    logger.warning("Artifact path does not exist: %s", path)
+            except Exception as exc:
+                logger.warning("Failed to log artifact to MLflow: %s", exc)
+
     def get_lineage(self) -> dict:
         """Return stored training lineage."""
         return self.lineage
@@ -167,6 +234,15 @@ class ExperimentTracker:
         elif self.backend == "tensorboard" and self._writer is not None:
             self._writer.close()
             logger.info("TensorBoard writer closed.")
+
+        elif self.backend == "mlflow":
+            try:
+                import mlflow
+
+                mlflow.end_run()
+                logger.info("MLflow run finished.")
+            except Exception as exc:
+                logger.warning("Failed to finish MLflow run: %s", exc)
 
 
 def create_tracker_from_config(config: dict) -> ExperimentTracker:

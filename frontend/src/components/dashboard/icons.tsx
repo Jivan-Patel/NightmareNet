@@ -248,3 +248,9 @@ export const IconKebab = (p: IconProps) => (
     <circle cx="12" cy="18.5" r="1.2" fill="currentColor" stroke="none" />
   </svg>
 );
+
+export const IconMenu = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+);

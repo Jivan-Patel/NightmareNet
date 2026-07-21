@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -5,6 +6,8 @@ from typing import Any, Dict, Optional
 import yaml
 
 from nightmarenet.hub.utils import require_hf_hub
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_model_card(repo_id: str, metadata: Dict[str, Any]) -> str:
@@ -92,10 +95,10 @@ def push_model(model_dir: str, repo_id: str, metadata_path: Optional[str] = None
     with open(card_path, "w", encoding="utf-8") as f:
         f.write(card_content)
 
-    print(f"Pushing to Hub '{model_dir}' : '{repo_id}'...")
+    logger.info("Pushing to Hub '%s' : '%s'...", model_dir, repo_id)
     api.create_repo(repo_id=repo_id, exist_ok=True, repo_type="model")
     api.upload_folder(folder_path=str(src_path), repo_id=repo_id, repo_type="model")
-    print("✓ Pushing to Hub completed successfully.")
+    logger.info("Pushing to Hub completed successfully.")
 
 
 @require_hf_hub
@@ -108,7 +111,7 @@ def pull_model(repo_id: str, target_dir: str) -> None:
     dest_path = Path(target_dir)
     dest_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"Downloading model... '{repo_id}'")
+    logger.info("Downloading model... '%s'", repo_id)
     token = os.getenv("HF_TOKEN")
     snapshot_download(repo_id=repo_id, local_dir=str(dest_path), token=token)
-    print(f"✓ Model successfully downloaded to: {target_dir}")
+    logger.info("Model successfully downloaded to: %s", target_dir)

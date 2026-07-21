@@ -260,6 +260,22 @@ class WebhookConfigSchema(BaseModel):
     )
 
 
+class WebhookSettingsRequest(BaseModel):
+    """Request body for saving webhook settings."""
+
+    webhooks: list[WebhookConfigSchema] = Field(
+        default_factory=list, description="List of webhook configurations."
+    )
+
+
+class WebhookSettingsResponse(BaseModel):
+    """Response body containing webhook settings."""
+
+    webhooks: list[WebhookConfigSchema] = Field(
+        default_factory=list, description="List of webhook configurations."
+    )
+
+
 class PipelineCreateRequest(BaseModel):
     """Request body for creating a new end-to-end pipeline run."""
 

@@ -657,3 +657,27 @@ export function testWebhook(body: TestWebhookRequest): Promise<{ status: string 
     body: JSON.stringify(body),
   });
 }
+
+export interface WebhookConfig {
+  url: string;
+  events: string[];
+}
+
+export interface WebhookSettingsRequest {
+  webhooks: WebhookConfig[];
+}
+
+export interface WebhookSettingsResponse {
+  webhooks: WebhookConfig[];
+}
+
+export function getWebhooks(): Promise<WebhookSettingsResponse> {
+  return apiFetch<WebhookSettingsResponse>("/api/v1/settings/webhooks");
+}
+
+export function saveWebhooks(body: WebhookSettingsRequest): Promise<WebhookSettingsResponse> {
+  return apiFetch<WebhookSettingsResponse>("/api/v1/settings/webhooks", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

@@ -89,7 +89,8 @@ class EvaluatePhase(Phase):
                 if tracking_cfg.get("compliance_report", False):
                     from nightmarenet.compliance.report import generate_report
 
-                    output_dir = tracking_cfg.get("output_dir", "results")
+                    eval_cfg = context.config.get("evaluation", {})
+                    output_dir = eval_cfg.get("output_dir", "results")
                     model_path = ""
                     training_cfg = context.config.get("training", {})
                     checkpoint_dir = training_cfg.get("checkpoint_dir")

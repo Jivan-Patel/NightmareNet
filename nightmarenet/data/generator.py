@@ -11,6 +11,7 @@ import math
 import os
 from typing import Any, Optional
 
+import torch
 from datasets import Dataset, IterableDataset
 
 from nightmarenet.distortions.adversarial import apply_adversarial_distortions
@@ -100,6 +101,9 @@ class DreamDatasetGenerator:
         Returns:
             A new Dataset/IterableDataset with mildly distorted text.
         """
+        if not hasattr(dataset, "map"):
+            return DistortedVisionDataset(dataset, self, phase="dream")
+
         import random
 
         random.seed(self.seed)
@@ -350,6 +354,9 @@ class NightmareDatasetGenerator:
         Returns:
             A new Dataset/IterableDataset with extremely perturbed text.
         """
+        if not hasattr(dataset, "map"):
+            return DistortedVisionDataset(dataset, self, phase="nightmare")
+
         import random
 
         random.seed(self.seed)
@@ -470,3 +477,62 @@ def create_generators_from_config(
     )
 
     return dream_gen, nightmare_gen
+
+
+class DistortedVisionDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, generator, phase="dream"):
+        self.dataset = dataset
+        self.generator = generator
+        self.phase = phase
+        self._cached_strengths = None
+        self._cached_strengths_len = None
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = self.dataset[idx]
+        pixel_values = item["pixel_values"]
+        labels = item["labels"]
+
+        from nightmarenet.distortions.registry import get_vision_registry
+
+        registry = get_vision_registry()
+
+        # Retrieve engines matching the current phase
+        engines = []
+        vision_config = self.generator.config.get("vision", {})
+        if vision_config:
+            for name, prob in vision_config.items():
+                import random
+
+                meta = registry.get_engine_metadata(name)
+                if meta.get("phase") == self.phase and random.random() < prob:
+                    engines.append(name)
+        else:
+            for name in registry.engine_names:
+                meta = registry.get_engine_metadata(name)
+                if meta.get("phase") == self.phase:
+                    engines.append(name)
+
+        actual_strength = self.generator.strength
+        sched = getattr(self.generator, "strength_schedule", "uniform")
+        if self.phase == "nightmare" and sched != "uniform":
+            ds_len = len(self.dataset)
+            if self._cached_strengths is None or self._cached_strengths_len != ds_len:
+                self._cached_strengths = self.generator._compute_strengths(ds_len)
+                self._cached_strengths_len = ds_len
+            if idx < len(self._cached_strengths):
+                actual_strength = self._cached_strengths[idx]
+
+        distorted = pixel_values
+        for name in engines:
+            if name in ["vision_fgsm", "vision_pgd"]:
+                fn = registry._engines.get(name)
+                if fn is not None and hasattr(fn, "__self__"):
+                    fn.__self__.model = self.generator.target_model
+            distorted = registry.apply(
+                name, distorted, strength=actual_strength, seed=self.generator.seed
+            )
+
+        return {"pixel_values": distorted, "labels": labels}

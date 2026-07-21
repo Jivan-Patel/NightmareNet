@@ -37,6 +37,7 @@ def cmd_train(args: argparse.Namespace) -> int:
 
     try:
         from nightmarenet.utils.logging_config import setup_logging_from_config
+
         setup_logging_from_config(config)
     except Exception as exc:
         print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
@@ -88,11 +89,64 @@ def cmd_train(args: argparse.Namespace) -> int:
 def cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate text robustness via distortion API logic.
 
+    When ``--attacks`` is supplied, runs TextAttack adversarial evaluation
+    instead of the standard distortion-based evaluation.
+
     When ``--json`` is supplied, emits a single JSON object on stdout suitable
     for CI consumption (e.g. the ``nightmarenet-robustness-check`` composite
     GitHub Action) containing per-strength similarity scores plus an aggregate
     ``robustness_score`` in ``[0, 1]``.
     """
+    json_only = bool(getattr(args, "json", False))
+    dataset = getattr(args, "dataset", None) or "sst2"
+    model_name = getattr(args, "model", None) or ""
+    attacks_arg = getattr(args, "attacks", None)
+
+    # --- TextAttack branch ---
+    if attacks_arg:
+        from nightmarenet.evaluation.textattack_adapter import (
+            _check_textattack_available,
+            format_comparison_table,
+            run_textattack_evaluation,
+        )
+
+        _check_textattack_available()
+
+        if not model_name:
+            print("Error: --model is required when using --attacks", file=sys.stderr)
+            return 1
+
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+        if not json_only:
+            print(f"Loading model: {model_name}")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
+        attack_names = [a.strip() for a in attacks_arg.split(",")]
+        num_examples = getattr(args, "num_examples", 200)
+        device = getattr(args, "device", None)
+
+        results = run_textattack_evaluation(
+            model=model,
+            tokenizer=tokenizer,
+            dataset_name=dataset,
+            attack_names=attack_names,
+            num_examples=num_examples,
+            device=device,
+        )
+
+        if json_only:
+            sys.stdout.write(json.dumps(results))
+            sys.stdout.write("\n")
+        else:
+            print(format_comparison_table(results, dataset_name=dataset))
+
+        has_errors = any("error" in v for v in results.values())
+        return 1 if has_errors else 0
+
+    # --- Standard distortion-based evaluation ---
     from nightmarenet.distortions.registry import get_registry
 
     json_only = bool(getattr(args, "json", False))
@@ -220,6 +274,7 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         if isinstance(config, dict):
             try:
                 from nightmarenet.utils.logging_config import setup_logging_from_config
+
                 setup_logging_from_config(config)
             except Exception as exc:
                 print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
@@ -560,6 +615,90 @@ def cmd_pull(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Export a trained model to ONNX or TorchScript."""
+    import os
+
+    import torch
+
+    checkpoint_dir = args.checkpoint
+    output_path = args.output
+    fmt = args.format
+
+    if not os.path.exists(checkpoint_dir):
+        print(f"Error: checkpoint directory does not exist: {checkpoint_dir}", file=sys.stderr)
+        return 1
+
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+    except ImportError:
+        print("Error: transformers library is required to export models.", file=sys.stderr)
+        return 1
+
+    config_path = os.path.join(checkpoint_dir, "config.json")
+    if os.path.exists(config_path):
+        model_name_or_path = checkpoint_dir
+    else:
+        model_name_or_path = getattr(args, "model", None) or "distilbert-base-uncased"
+
+    try:
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+
+        task = getattr(args, "task", "seq_classification")
+        if task == "causal_lm":
+            from transformers import AutoModelForCausalLM
+
+            model = AutoModelForCausalLM.from_config(config)
+        elif task == "masked_lm":
+            from transformers import AutoModelForMaskedLM
+
+            model = AutoModelForMaskedLM.from_config(config)
+        else:
+            from transformers import AutoModelForSequenceClassification
+
+            model = AutoModelForSequenceClassification.from_config(config)
+    except Exception as e:
+        print(f"Error initializing model structure: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Loading weights from {checkpoint_dir}...")
+    from nightmarenet.distributed.checkpoint import load_model_weights
+
+    device = torch.device("cpu")
+
+    try:
+        load_model_weights(model, checkpoint_dir, device)
+    except Exception as e:
+        print(f"Error loading checkpoint weights: {e}", file=sys.stderr)
+        return 1
+
+    model.eval()
+
+    print("Generating dummy inputs...")
+    dummy_text = "The quick brown fox jumps over the lazy dog."
+    dummy_input = tokenizer(dummy_text, return_tensors="pt")
+
+    try:
+        if fmt == "onnx":
+            from nightmarenet.export import export_to_onnx
+
+            export_to_onnx(model, output_path, dummy_input)
+        elif fmt == "torchscript":
+            from nightmarenet.export import export_to_torchscript
+
+            export_to_torchscript(model, output_path, dummy_input)
+        else:
+            print(f"Error: Unknown format '{fmt}'", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Export failed: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Successfully exported model to {output_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nightmarenet",
@@ -608,6 +747,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Emit a single JSON object on stdout (for CI consumption)",
+    )
+    eval_parser.add_argument(
+        "--attacks",
+        help="Comma-separated TextAttack recipes (e.g. textfooler,bertattack)",
+    )
+    eval_parser.add_argument(
+        "--num-examples", type=int, default=200, help="Number of examples for attack eval"
+    )
+    eval_parser.add_argument(
+        "--device", default=None, help="Device for attack evaluation (e.g. cuda, cpu)"
     )
 
     # benchmark
@@ -700,6 +849,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target output directory vector to write weights artifacts into",
     )
 
+    # export command
+    export_parser = subparsers.add_parser(
+        "export", help="Export a model to ONNX or TorchScript for production deployment"
+    )
+    export_parser.add_argument(
+        "--format",
+        required=True,
+        choices=["onnx", "torchscript"],
+        help="Export format",
+    )
+    export_parser.add_argument(
+        "--checkpoint", required=True, help="Path to local trained checkpoint directory"
+    )
+    export_parser.add_argument("--output", required=True, help="Target output file path")
+    export_parser.add_argument(
+        "--model", help="Base model name/path (if checkpoint lacks config.json)"
+    )
+    export_parser.add_argument(
+        "--task",
+        default="seq_classification",
+        choices=["seq_classification", "causal_lm", "masked_lm"],
+        help="Model task architecture",
+    )
+
     return parser
 
 
@@ -733,6 +906,7 @@ def main(argv: Optional[list] = None) -> int:
         "transfer": cmd_transfer,
         "push": cmd_push,
         "pull": cmd_pull,
+        "export": cmd_export,
     }
 
     return commands[args.command](args)
