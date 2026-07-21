@@ -1,8 +1,8 @@
 # NightmareNet — Technical Requirements Document (TRD)
 
-**Version**: 1.0  
-**Last Updated**: 2026-05-23  
-**Status**: Draft  
+**Version**: 1.0
+**Last Updated**: 2026-05-23
+**Status**: Draft
 **Owner**: NightmareNet Core Team
 
 ---
@@ -558,10 +558,10 @@ flowchart LR
 
 ### ADR-001: Sleep-Inspired Phase Architecture over Monolithic Training
 
-**Status**: Accepted  
-**Date**: 2026-03-15  
-**Context**: Need a training methodology that addresses robustness, forgetting, and compression simultaneously.  
-**Decision**: Implement 4 discrete phases (Wake/Dream/Nightmare/Compress) as separate classes rather than a single loss function combining all objectives.  
+**Status**: Accepted
+**Date**: 2026-03-15
+**Context**: Need a training methodology that addresses robustness, forgetting, and compression simultaneously.
+**Decision**: Implement 4 discrete phases (Wake/Dream/Nightmare/Compress) as separate classes rather than a single loss function combining all objectives.
 **Consequences**:
 - (+) Each phase is independently testable and configurable
 - (+) Phases can be reordered, repeated, or skipped via config
@@ -572,10 +572,10 @@ flowchart LR
 
 ### ADR-002: FastAPI over Flask/Django for API Layer
 
-**Status**: Accepted  
-**Date**: 2026-03-20  
-**Context**: Need a Python web framework that supports async operations, auto-generates OpenAPI docs, and integrates with Pydantic for type-safe validation.  
-**Decision**: Use FastAPI as the API framework.  
+**Status**: Accepted
+**Date**: 2026-03-20
+**Context**: Need a Python web framework that supports async operations, auto-generates OpenAPI docs, and integrates with Pydantic for type-safe validation.
+**Decision**: Use FastAPI as the API framework.
 **Consequences**:
 - (+) Native async support for concurrent request handling
 - (+) Automatic OpenAPI/Swagger documentation
@@ -586,10 +586,10 @@ flowchart LR
 
 ### ADR-003: In-Memory Pipeline Registry over Database-Backed Queue
 
-**Status**: Accepted (revisit at scale)  
-**Date**: 2026-04-01  
-**Context**: Need to manage long-running training pipelines with start/stop/status semantics.  
-**Decision**: Use bounded in-memory dictionary with threading locks. Cap at 64 runners (configurable). Evict completed runs first when at capacity.  
+**Status**: Accepted (revisit at scale)
+**Date**: 2026-04-01
+**Context**: Need to manage long-running training pipelines with start/stop/status semantics.
+**Decision**: Use bounded in-memory dictionary with threading locks. Cap at 64 runners (configurable). Evict completed runs first when at capacity.
 **Consequences**:
 - (+) Zero infrastructure dependencies for self-hosted users
 - (+) Simple implementation, easy to reason about
@@ -600,10 +600,10 @@ flowchart LR
 
 ### ADR-004: Hybrid Open-Source + Hosted Platform Model
 
-**Status**: Accepted  
-**Date**: 2026-04-10  
-**Context**: Need a go-to-market strategy that builds community adoption while generating revenue.  
-**Decision**: Apache 2.0 open-source core (distortions, training, evaluation, CLI) with proprietary hosted platform (orchestration, multi-GPU, compliance, teams).  
+**Status**: Accepted
+**Date**: 2026-04-10
+**Context**: Need a go-to-market strategy that builds community adoption while generating revenue.
+**Decision**: Apache 2.0 open-source core (distortions, training, evaluation, CLI) with proprietary hosted platform (orchestration, multi-GPU, compliance, teams).
 **Consequences**:
 - (+) Low barrier to adoption; academic citations drive awareness
 - (+) Community contributions improve core quality
@@ -615,10 +615,10 @@ flowchart LR
 
 ### ADR-005: Configuration-Driven over Code-Driven Experiments
 
-**Status**: Accepted  
-**Date**: 2026-04-15  
-**Context**: Users need reproducible experiments without modifying source code.  
-**Decision**: All experiment parameters defined in YAML config files with schema validation. CLI accepts `--config` path. Python API accepts dict. No experiment requires code changes.  
+**Status**: Accepted
+**Date**: 2026-04-15
+**Context**: Users need reproducible experiments without modifying source code.
+**Decision**: All experiment parameters defined in YAML config files with schema validation. CLI accepts `--config` path. Python API accepts dict. No experiment requires code changes.
 **Consequences**:
 - (+) Full reproducibility via config file versioning
 - (+) Non-programmers can run experiments

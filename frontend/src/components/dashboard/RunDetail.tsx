@@ -206,7 +206,6 @@ function ReRunMenu({ config }: { config: RunConfig }) {
     // TODO: wire to POST /api/v1/pipeline/create with this mutated config.
     // For now the queue surface lives only client-side so reviewers can
     // exercise the UX without an active training cluster.
-    console.log("[RunDetail] re-run requested", { preset: preset.id, config: next });
     setOpen(false);
   };
 

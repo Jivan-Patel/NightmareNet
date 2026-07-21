@@ -30,7 +30,44 @@ def _safe_float(value: float, default: float = 0.0) -> float:
     return float(value)
 
 
-def compute_perplexity(model, dataloader: DataLoader, device="cpu") -> float:
+def compute_confidence_delta(clean_conf: float, dist_conf: float) -> float:
+    """Compute confidence delta (degradation) from clean to distorted."""
+    return clean_conf - dist_conf
+
+
+def rank_failures(failures: list[dict]) -> list[dict]:
+    """Sort failed samples by confidence_delta descending."""
+    return sorted(failures, key=lambda x: x.get("confidence_delta", 0.0), reverse=True)
+
+
+def build_delta_distribution(failures: list[dict]) -> dict:
+    """Bucket every failure into severity buckets."""
+    dist = {"0_10": 0, "10_25": 0, "25_50": 0, "50_plus": 0}
+    for f in failures:
+        delta = f.get("confidence_delta", 0.0)
+        if delta >= 0.5:
+            dist["50_plus"] += 1
+        elif delta >= 0.25:
+            dist["25_50"] += 1
+        elif delta >= 0.10:
+            dist["10_25"] += 1
+        elif delta > 0.0:
+            dist["0_10"] += 1
+    return dist
+
+
+def truncate_preview(text: str, max_len: int = 50) -> str:
+    """Truncate text for preview."""
+    if not isinstance(text, str):
+        text = str(text)
+    if len(text) > max_len:
+        return text[:max_len] + "..."
+    return text
+
+
+def compute_perplexity(
+    model, dataloader: DataLoader, device="cpu", return_per_sample: bool = False
+):
     """Compute perplexity of a language model on a dataset.
 
     Args:
@@ -45,13 +82,45 @@ def compute_perplexity(model, dataloader: DataLoader, device="cpu") -> float:
     total_loss = 0.0
     total_tokens = 0
 
+    per_sample_ppls = []
+
     try:
         with torch.no_grad():
             for batch in tqdm(dataloader, desc="Computing perplexity"):
                 batch = {k: v.to(device) for k, v in batch.items()}
-                outputs = model(**batch, labels=batch.get("input_ids"))
-                total_loss += outputs.loss.item() * batch["input_ids"].numel()
-                total_tokens += batch["input_ids"].numel()
+
+                if "attention_mask" in batch:
+                    mask = batch["attention_mask"]
+                else:
+                    mask = torch.ones_like(batch["input_ids"])
+
+                labels = batch["input_ids"].clone()
+                labels[mask == 0] = -100
+
+                outputs = model(**batch, labels=labels)
+                logits = outputs.logits
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                loss_fct = torch.nn.CrossEntropyLoss(reduction="none", ignore_index=-100)
+                loss = loss_fct(
+                    shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
+                )
+                loss = loss.view(shift_labels.size(0), -1)
+
+                shift_mask = mask[..., 1:].contiguous()
+                valid_tokens_per_sample = shift_mask.sum(dim=1)
+                per_sample_loss = (loss * shift_mask).sum(dim=1) / torch.clamp(
+                    valid_tokens_per_sample, min=1
+                )
+
+                if return_per_sample:
+                    batch_ppls = (
+                        torch.exp(torch.clamp(per_sample_loss, max=100)).cpu().numpy().tolist()
+                    )
+                    per_sample_ppls.extend(batch_ppls)
+
+                total_loss += (per_sample_loss * valid_tokens_per_sample).sum().item()
+                total_tokens += valid_tokens_per_sample.sum().item()
     except Exception as e:
         logger.warning("Error during perplexity computation: %s", e)
         return float("inf")
@@ -61,7 +130,10 @@ def compute_perplexity(model, dataloader: DataLoader, device="cpu") -> float:
     result = float(perplexity)
     if math.isnan(result) or math.isinf(result):
         logger.warning("Perplexity is NaN/Inf, returning inf")
-        return float("inf")
+        result = float("inf")
+
+    if return_per_sample:
+        return {"perplexity": result, "per_sample_ppls": per_sample_ppls}
     return result
 
 
@@ -86,6 +158,32 @@ def quick_robustness_score(
     """
     if len(base_dataset) == 0:
         return 0.0
+
+    is_vision = tokenizer is None or not hasattr(base_dataset, "map")
+    if is_vision:
+        try:
+            indices = list(range(min(subset_size, len(base_dataset))))
+            subset = torch.utils.data.Subset(base_dataset, indices)
+
+            class DummyGenerator:
+                def __init__(self, strength, seed, config):
+                    self.strength = strength
+                    self.seed = seed
+                    self.config = config
+                    self.target_model = model
+
+            from nightmarenet.data.generator import DistortedVisionDataset
+
+            dummy_gen = DummyGenerator(strength, seed=42, config={})
+            distorted_ds = DistortedVisionDataset(subset, dummy_gen, phase="dream")
+            dataloader = DataLoader(distorted_ds, batch_size=batch_size, shuffle=False)
+
+            metrics = classification_metrics(model, dataloader, device)
+            return metrics.get("accuracy", 0.0)
+        except Exception as e:
+            logger.warning("Error during quick robustness computation: %s", e)
+            return 0.0
+
     try:
         subset = base_dataset.shuffle(seed=42).select(range(min(subset_size, len(base_dataset))))
         distorted = subset.map(
@@ -209,6 +307,16 @@ def recall_score(
     """
     model.eval()
 
+    if tokenizer is None:
+        metrics = classification_metrics(model, dataloader, device)
+        if "error" in metrics:
+            return {"metric": "recall", "token_accuracy": 0.0, "perplexity": float("inf")}
+        return {
+            "metric": "recall",
+            "token_accuracy": metrics["accuracy"],
+            "perplexity": float("inf"),
+        }
+
     if tokenizer.pad_token_id is None:
         fallback = getattr(tokenizer, "eos_token_id", None) or 0
         logger.warning("tokenizer.pad_token_id is None, falling back to %d", fallback)
@@ -289,6 +397,7 @@ def robustness_score(
     max_length: int = 128,
     batch_size: int = 8,
     device="cpu",
+    export_failures: bool = False,
 ) -> dict:
     """Compute robustness score under increasing distortion strengths.
 
@@ -312,7 +421,162 @@ def robustness_score(
     if strengths is None:
         strengths = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
+    is_vision = tokenizer is None or not hasattr(base_dataset, "map")
+
+    all_failures = []
+
+    if is_vision:
+        accuracies = []
+
+        # Baseline collection
+        class DummyGenerator0:
+            def __init__(self, strength, seed, config):
+                self.strength = strength
+                self.seed = seed
+                self.config = config
+                self.target_model = model
+
+        from nightmarenet.data.generator import DistortedVisionDataset
+
+        dummy_gen_0 = DummyGenerator0(0.0, seed=42, config={})
+        clean_ds = DistortedVisionDataset(base_dataset, dummy_gen_0, phase="dream")
+        clean_dl = DataLoader(clean_ds, batch_size=batch_size, shuffle=False)
+        clean_metrics = classification_metrics(model, clean_dl, device, return_per_sample=True)
+        baseline_confs = clean_metrics.get("per_sample_confs", [])
+        orig_preds = clean_metrics.get("per_sample_preds", [])
+        orig_confs = clean_metrics.get("per_sample_confs", [])
+        failures_data = []
+
+        for strength in strengths:
+
+            class DummyGenerator:
+                def __init__(self, strength, seed, config):
+                    self.strength = strength
+                    self.seed = seed
+                    self.config = config
+                    self.target_model = model
+
+            from nightmarenet.data.generator import DistortedVisionDataset
+
+            dummy_gen = DummyGenerator(strength, seed=42, config={})
+            distorted_ds = DistortedVisionDataset(base_dataset, dummy_gen, phase="dream")
+            dataloader = DataLoader(distorted_ds, batch_size=batch_size, shuffle=False)
+
+            metrics = classification_metrics(model, dataloader, device, return_per_sample=True)
+            acc = metrics.get("accuracy", 0.0)
+            accuracies.append(acc)
+
+            if export_failures:
+                dist_preds = metrics.get("per_sample_preds", [])
+                dist_confs = metrics.get("per_sample_confs", [])
+                for i in range(len(orig_preds)):
+                    if i >= len(dist_preds):
+                        break
+                    failures_data.append(
+                        {
+                            "sample_index": i,
+                            "original_input": "<vision_input>",
+                            "distorted_input": "<vision_distorted>",
+                            "original_prediction": int(orig_preds[i]),
+                            "distorted_prediction": int(dist_preds[i]),
+                            "original_confidence": float(orig_confs[i]),
+                            "distorted_confidence": float(dist_confs[i]),
+                            "confidence_drop": float(orig_confs[i] - dist_confs[i]),
+                            "distortion_type": "vision_distortion",
+                            "distortion_strength": float(strength),
+                            "seed": 42,
+                        }
+                    )
+
+            logger.info("Robustness - Strength %.1f: Accuracy = %.4f", strength, acc)
+
+            dist_confs = metrics.get("per_sample_confs", [])
+            for i in range(len(baseline_confs)):
+                if i >= len(dist_confs):
+                    break
+                delta = compute_confidence_delta(baseline_confs[i], dist_confs[i])
+                if delta > 0.0:
+                    all_failures.append(
+                        {
+                            "sample_index": i,
+                            "preview": "N/A",
+                            "clean_confidence": baseline_confs[i],
+                            "distorted_confidence": dist_confs[i],
+                            "confidence_delta": delta,
+                        }
+                    )
+
+        _trapz_fn = getattr(np, "trapezoid", None)
+        if _trapz_fn is None:
+            _trapz_fn = np.trapz  # type: ignore[attr-defined]
+        auc = float(_trapz_fn(accuracies, strengths))
+
+        res = {
+            "metric": "robustness",
+            "strengths": strengths,
+            "accuracies": accuracies,
+            "auc_robustness": _safe_float(auc),
+        }
+        if export_failures:
+            res["per_sample_data"] = failures_data
+        return res
+
+        ranked_failures = rank_failures(all_failures)
+        res["top_failures"] = ranked_failures[:10]
+        res["delta_distribution"] = build_delta_distribution(ranked_failures)
+        res["confidence_deltas"] = [f["confidence_delta"] for f in ranked_failures]
+        return res
+
     perplexities = []
+    failures_data = []
+
+    orig_preds = []
+    orig_confs = []
+    orig_texts = []
+
+    if export_failures:
+        # Run classification on clean dataset to get original preds
+        def _get_preds(dataset):
+            def tok_fn(examples):
+                return tokenizer(
+                    examples[text_column],
+                    truncation=True,
+                    padding="max_length",
+                    max_length=max_length,
+                    return_tensors="pt",
+                )
+
+            tok_ds = dataset.map(tok_fn, batched=True, remove_columns=dataset.column_names)
+            tok_ds.set_format("torch")
+            dl = DataLoader(tok_ds, batch_size=batch_size, shuffle=False)
+            return classification_metrics(model, dl, device, return_per_sample=True)
+
+        clean_metrics = _get_preds(base_dataset)
+        orig_preds = clean_metrics.get("per_sample_preds", [])
+        orig_confs = clean_metrics.get("per_sample_confs", [])
+        orig_texts = [x[text_column] for x in base_dataset]
+
+    def _get_ppls(dataset):
+        def tok_fn(examples):
+            return tokenizer(
+                examples[text_column],
+                truncation=True,
+                padding="max_length",
+                max_length=max_length,
+                return_tensors="pt",
+            )
+
+        tok_ds = dataset.map(tok_fn, batched=True, remove_columns=dataset.column_names)
+        tok_ds.set_format("torch")
+        dl = DataLoader(tok_ds, batch_size=batch_size, shuffle=False)
+        res = compute_perplexity(model, dl, device, return_per_sample=True)
+        if isinstance(res, dict):
+            return res.get("per_sample_ppls", [])
+        return []
+
+    baseline_ppls = _get_ppls(base_dataset)
+    baseline_confs = [1.0 / max(p, 1e-8) for p in baseline_ppls]
+    texts = [x[text_column] for x in base_dataset]
 
     for strength in strengths:
         # Apply distortion at this strength
@@ -337,10 +601,59 @@ def robustness_score(
             remove_columns=distorted.column_names,
         )
         tokenized.set_format("torch")
-        dataloader = DataLoader(tokenized, batch_size=batch_size)
+        dataloader = DataLoader(tokenized, batch_size=batch_size, shuffle=False)
 
-        ppl = compute_perplexity(model, dataloader, device)
+        ppl_res = compute_perplexity(model, dataloader, device, return_per_sample=True)
+        if isinstance(ppl_res, dict):
+            ppl = ppl_res["perplexity"]
+            dist_ppls = ppl_res.get("per_sample_ppls", [])
+        else:
+            ppl = ppl_res
+            dist_ppls = []
+
+        dist_confs = [1.0 / max(p, 1e-8) for p in dist_ppls]
+        for i in range(len(baseline_confs)):
+            if i >= len(dist_confs):
+                break
+            delta = compute_confidence_delta(baseline_confs[i], dist_confs[i])
+            if delta > 0.0:
+                all_failures.append(
+                    {
+                        "sample_index": i,
+                        "preview": truncate_preview(texts[i]),
+                        "clean_confidence": baseline_confs[i],
+                        "distorted_confidence": dist_confs[i],
+                        "confidence_delta": delta,
+                    }
+                )
+
         perplexities.append(ppl)
+
+        if export_failures:
+            dist_metrics = classification_metrics(model, dataloader, device, return_per_sample=True)
+            dist_preds = dist_metrics.get("per_sample_preds", [])
+            dist_confs = dist_metrics.get("per_sample_confs", [])
+            dist_texts = [x[text_column] for x in distorted]
+
+            for i in range(len(orig_preds)):
+                if i >= len(dist_preds):
+                    break
+                failures_data.append(
+                    {
+                        "sample_index": i,
+                        "original_input": orig_texts[i],
+                        "distorted_input": dist_texts[i],
+                        "original_prediction": int(orig_preds[i]),
+                        "distorted_prediction": int(dist_preds[i]),
+                        "original_confidence": float(orig_confs[i]),
+                        "distorted_confidence": float(dist_confs[i]),
+                        "confidence_drop": float(orig_confs[i] - dist_confs[i]),
+                        "distortion_type": "text_distortion",
+                        "distortion_strength": float(strength),
+                        "seed": 42,
+                    }
+                )
+
         logger.info("Robustness - Strength %.1f: Perplexity = %.2f", strength, ppl)
 
     # Compute AUC using trapezoidal rule (normalized)
@@ -351,12 +664,21 @@ def robustness_score(
         _trapz_fn = np.trapz  # type: ignore[attr-defined]
     auc = float(_trapz_fn(inv_ppls, strengths))
 
-    return {
+    res = {
         "metric": "robustness",
         "strengths": strengths,
         "perplexities": [_safe_float(p, default=float("inf")) for p in perplexities],
         "auc_robustness": _safe_float(auc),
     }
+    if export_failures:
+        res["per_sample_data"] = failures_data
+    return res
+
+    ranked_failures = rank_failures(all_failures)
+    res["top_failures"] = ranked_failures[:10]
+    res["delta_distribution"] = build_delta_distribution(ranked_failures)
+    res["confidence_deltas"] = [f["confidence_delta"] for f in ranked_failures]
+    return res
 
 
 def hallucination_rate(
@@ -445,6 +767,7 @@ def classification_metrics(
     model,
     dataloader: DataLoader,
     device="cpu",
+    return_per_sample: bool = False,
 ) -> dict:
     """Compute classification metrics (accuracy, F1, per-class stats).
 
@@ -461,17 +784,31 @@ def classification_metrics(
     model.eval()
     all_preds = []
     all_labels = []
+    all_confs = []
 
     try:
         with torch.no_grad():
             for batch in tqdm(dataloader, desc="Computing classification metrics"):
                 batch = {k: v.to(device) for k, v in batch.items()}
                 outputs = model(**batch)
-                logits = outputs.logits
-                preds = logits.argmax(dim=-1).cpu().numpy()
-                labels = batch["labels"].cpu().numpy()
+                logits = outputs.logits if hasattr(outputs, "logits") else outputs
+
+                probs = torch.softmax(logits, dim=-1)
+                confs, preds = probs.max(dim=-1)
+
+                preds = preds.cpu().numpy()
+                confs = confs.cpu().numpy()
+
+                if "labels" in batch:
+                    labels = batch["labels"].cpu().numpy()
+                    all_labels.extend(labels.tolist())
+                else:
+                    # Dummy labels if not present
+                    all_labels.extend([0] * len(preds))
+
                 all_preds.extend(preds.tolist())
-                all_labels.extend(labels.tolist())
+                if return_per_sample:
+                    all_confs.extend(confs.tolist())
     except Exception as e:
         logger.warning("Error during classification metrics computation: %s", e)
         return {
@@ -487,7 +824,7 @@ def classification_metrics(
         all_labels, all_preds, zero_division=0
     )
 
-    return {
+    res = {
         "metric": "classification",
         "accuracy": _safe_float(accuracy),
         "f1_weighted": _safe_float(f1_weighted),
@@ -496,3 +833,7 @@ def classification_metrics(
         "f1_per_class": [_safe_float(f) for f in f1_per_class],
         "support_per_class": support.tolist(),
     }
+    if return_per_sample:
+        res["per_sample_preds"] = all_preds
+        res["per_sample_confs"] = all_confs
+    return res

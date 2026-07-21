@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from nightmarenet import __version__
+from nightmarenet.hub.core import pull_model, push_model
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -28,7 +29,18 @@ def cmd_train(args: argparse.Namespace) -> int:
     import yaml
 
     with open(config_path) as f:
-        config = yaml.safe_load(f)
+        config = yaml.safe_load(f) or {}
+
+    if not isinstance(config, dict):
+        print(f"Error: config file is not a valid YAML mapping: {config_path}", file=sys.stderr)
+        return 1
+
+    try:
+        from nightmarenet.utils.logging_config import setup_logging_from_config
+
+        setup_logging_from_config(config)
+    except Exception as exc:
+        print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
 
     if getattr(args, "resume", None):
         if "training" not in config:
@@ -52,7 +64,7 @@ def cmd_train(args: argparse.Namespace) -> int:
         config=config,
         on_event=on_event,
         distributed=getattr(args, "distributed", None),
-        resume_dir=getattr(args, "resume", None)
+        resume_dir=getattr(args, "resume", None),
     )
 
     try:
@@ -77,11 +89,64 @@ def cmd_train(args: argparse.Namespace) -> int:
 def cmd_evaluate(args: argparse.Namespace) -> int:
     """Evaluate text robustness via distortion API logic.
 
+    When ``--attacks`` is supplied, runs TextAttack adversarial evaluation
+    instead of the standard distortion-based evaluation.
+
     When ``--json`` is supplied, emits a single JSON object on stdout suitable
     for CI consumption (e.g. the ``nightmarenet-robustness-check`` composite
     GitHub Action) containing per-strength similarity scores plus an aggregate
     ``robustness_score`` in ``[0, 1]``.
     """
+    json_only = bool(getattr(args, "json", False))
+    dataset = getattr(args, "dataset", None) or "sst2"
+    model_name = getattr(args, "model", None) or ""
+    attacks_arg = getattr(args, "attacks", None)
+
+    # --- TextAttack branch ---
+    if attacks_arg:
+        from nightmarenet.evaluation.textattack_adapter import (
+            _check_textattack_available,
+            format_comparison_table,
+            run_textattack_evaluation,
+        )
+
+        _check_textattack_available()
+
+        if not model_name:
+            print("Error: --model is required when using --attacks", file=sys.stderr)
+            return 1
+
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+        if not json_only:
+            print(f"Loading model: {model_name}")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
+        attack_names = [a.strip() for a in attacks_arg.split(",")]
+        num_examples = getattr(args, "num_examples", 200)
+        device = getattr(args, "device", None)
+
+        results = run_textattack_evaluation(
+            model=model,
+            tokenizer=tokenizer,
+            dataset_name=dataset,
+            attack_names=attack_names,
+            num_examples=num_examples,
+            device=device,
+        )
+
+        if json_only:
+            sys.stdout.write(json.dumps(results))
+            sys.stdout.write("\n")
+        else:
+            print(format_comparison_table(results, dataset_name=dataset))
+
+        has_errors = any("error" in v for v in results.values())
+        return 1 if has_errors else 0
+
+    # --- Standard distortion-based evaluation ---
     from nightmarenet.distortions.registry import get_registry
 
     json_only = bool(getattr(args, "json", False))
@@ -161,8 +226,17 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         print(f"  Output: {args.output if args.output else './results'}")
         print()
 
-        orchestrator = EnsembleOrchestrator(args.config)
-        results = orchestrator.run(timeout_seconds=300)
+        output_dir = args.output if args.output else "./results"
+        no_cache = getattr(args, "no_cache", False)
+
+        try:
+            orchestrator = EnsembleOrchestrator(args.config)
+            results = orchestrator.run(
+                timeout_seconds=300, output_dir=output_dir, no_cache=no_cache
+            )
+        except (FileNotFoundError, OSError) as e:
+            print(f"Error: could not load benchmark config: {e}", file=sys.stderr)
+            return 1
 
         # Analyze pareto frontier
         pareto_front = get_pareto_frontier(results["models_summary"])
@@ -172,14 +246,11 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         curves = calculate_degradation_curves(results["raw_results"])
         results["degradation_curves"] = curves
 
-        output_dir = args.output if args.output else "./results"
         # We want json, csv, latex
-        # format_all reads 'models_summary' from results dict for table generation
         format_all(results, formats=["json", "csv", "latex"], output_dir=output_dir)
         print(f"\nResults saved to {output_dir}")
 
         return 0
-
     import yaml
 
     from nightmarenet.evaluation.evaluator import Evaluator
@@ -198,7 +269,15 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
     if config_path.exists():
         with open(config_path) as f:
-            config = yaml.safe_load(f)
+            config = yaml.safe_load(f) or {}
+
+        if isinstance(config, dict):
+            try:
+                from nightmarenet.utils.logging_config import setup_logging_from_config
+
+                setup_logging_from_config(config)
+            except Exception as exc:
+                print(f"Warning: logging initialization failed: {exc}", file=sys.stderr)
     else:
         config = {}
 
@@ -253,11 +332,12 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         print("\n[SUCCESS] Metrics match or exceed canonical paper specifications!")
     else:
         print(
-            "\n[WARNING] Benchmark completed, but metrics diverged "
-            "below the target paper standard."
+            "\n[WARNING] Benchmark completed, but metrics diverged below the target paper standard."
         )
 
     return 0
+
+
 def cmd_distort(args: argparse.Namespace) -> int:
     """Apply a distortion to input text."""
     from nightmarenet.distortions import dream, nightmare
@@ -429,14 +509,14 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 print(
                     "Error: transferred JSON is missing required keys "
                     "('robustness_score', 'clean_accuracy')",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
                 return 1
             if "robustness_score" not in b_data or "clean_accuracy" not in b_data:
                 print(
                     "Error: baseline JSON is missing required keys "
                     "('robustness_score', 'clean_accuracy')",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
                 return 1
 
@@ -465,9 +545,7 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 return 1
 
             model = create_transfer_model(
-                str(foundation_path),
-                task_type=config.task_type,
-                num_labels=config.num_labels
+                str(foundation_path), task_type=config.task_type, num_labels=config.num_labels
             )
 
             print(f"Loading dataset: {config.dataset}")
@@ -476,13 +554,12 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 {
                     "input_ids": torch.zeros((1, 128), dtype=torch.long),
                     "attention_mask": torch.ones((1, 128), dtype=torch.long),
-                    "labels": torch.zeros(1, dtype=torch.long)
-                } for _ in range(2)
+                    "labels": torch.zeros(1, dtype=torch.long),
+                }
+                for _ in range(2)
             ]
             dataloader = DataLoader(
-                dummy_data,
-                batch_size=config.batch_size,
-                collate_fn=default_data_collator
+                dummy_data, batch_size=config.batch_size, collate_fn=default_data_collator
             )
 
             device = torch.device(config.device)
@@ -495,7 +572,7 @@ def cmd_transfer(args: argparse.Namespace) -> int:
                 num_epochs=config.num_epochs,
                 freeze_bottom_n=config.freeze_bottom_n,
                 unfreeze_after_epoch=config.unfreeze_after_epoch,
-                strict_layer_freezing=getattr(config, "strict_layer_freezing", False)
+                strict_layer_freezing=getattr(config, "strict_layer_freezing", False),
             )
 
             print("Transfer fine-tuning completed.")
@@ -508,12 +585,148 @@ def cmd_transfer(args: argparse.Namespace) -> int:
 
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"Error during transfer fine-tuning: {e}", file=sys.stderr)
             return 1
     else:
         print("Invalid arguments for transfer command.", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_optimize(args: argparse.Namespace) -> int:
+    """Run Optuna hyperparameter optimization."""
+    try:
+        from nightmarenet.optimization.hpo import OPTUNA_AVAILABLE, HyperparameterOptimizer
+    except ImportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if not OPTUNA_AVAILABLE:
+        print(
+            "Error: Optuna is required for HPO. Install it with: pip install 'nightmarenet[hpo]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"Error: config file not found: {config_path}", file=sys.stderr)
+        return 1
+
+    try:
+        optimizer = HyperparameterOptimizer(str(config_path))
+        if args.n_trials is not None:
+            optimizer.n_trials = args.n_trials
+        optimizer.optimize()
+    except Exception as e:
+        print(f"Optimization failed: {e}", file=sys.stderr)
+        return 1
+
+    return 0
+
+def cmd_push(args: argparse.Namespace) -> int:
+    """Push a hardened model package structure to HuggingFace Hub."""
+    try:
+        push_model(model_dir=args.model, repo_id=args.hub, metadata_path=args.metadata)
+        return 0
+    except Exception as e:
+        print(f"Error during Hub push operational routing: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_pull(args: argparse.Namespace) -> int:
+    """Pull a pre-hardened model snapshot layout from HuggingFace Hub."""
+    try:
+        pull_model(repo_id=args.repo, target_dir=args.output)
+        return 0
+    except Exception as e:
+        print(f"Error during Hub pull operational routing: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    """Export a trained model to ONNX or TorchScript."""
+    import os
+
+    import torch
+
+    checkpoint_dir = args.checkpoint
+    output_path = args.output
+    fmt = args.format
+
+    if not os.path.exists(checkpoint_dir):
+        print(f"Error: checkpoint directory does not exist: {checkpoint_dir}", file=sys.stderr)
+        return 1
+
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+    except ImportError:
+        print("Error: transformers library is required to export models.", file=sys.stderr)
+        return 1
+
+    config_path = os.path.join(checkpoint_dir, "config.json")
+    if os.path.exists(config_path):
+        model_name_or_path = checkpoint_dir
+    else:
+        model_name_or_path = getattr(args, "model", None) or "distilbert-base-uncased"
+
+    try:
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+
+        task = getattr(args, "task", "seq_classification")
+        if task == "causal_lm":
+            from transformers import AutoModelForCausalLM
+
+            model = AutoModelForCausalLM.from_config(config)
+        elif task == "masked_lm":
+            from transformers import AutoModelForMaskedLM
+
+            model = AutoModelForMaskedLM.from_config(config)
+        else:
+            from transformers import AutoModelForSequenceClassification
+
+            model = AutoModelForSequenceClassification.from_config(config)
+    except Exception as e:
+        print(f"Error initializing model structure: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Loading weights from {checkpoint_dir}...")
+    from nightmarenet.distributed.checkpoint import load_model_weights
+
+    device = torch.device("cpu")
+
+    try:
+        load_model_weights(model, checkpoint_dir, device)
+    except Exception as e:
+        print(f"Error loading checkpoint weights: {e}", file=sys.stderr)
+        return 1
+
+    model.eval()
+
+    print("Generating dummy inputs...")
+    dummy_text = "The quick brown fox jumps over the lazy dog."
+    dummy_input = tokenizer(dummy_text, return_tensors="pt")
+
+    try:
+        if fmt == "onnx":
+            from nightmarenet.export import export_to_onnx
+
+            export_to_onnx(model, output_path, dummy_input)
+        elif fmt == "torchscript":
+            from nightmarenet.export import export_to_torchscript
+
+            export_to_torchscript(model, output_path, dummy_input)
+        else:
+            print(f"Error: Unknown format '{fmt}'", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Export failed: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Successfully exported model to {output_path}")
     return 0
 
 
@@ -527,6 +740,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {__version__}",
         help="Show the installed nightmarenet version and exit",
+    )
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output (DEBUG level logging)",
+    )
+    verbosity_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress informational output (only ERROR level logging)",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -553,6 +779,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit a single JSON object on stdout (for CI consumption)",
     )
+    eval_parser.add_argument(
+        "--attacks",
+        help="Comma-separated TextAttack recipes (e.g. textfooler,bertattack)",
+    )
+    eval_parser.add_argument(
+        "--num-examples", type=int, default=200, help="Number of examples for attack eval"
+    )
+    eval_parser.add_argument(
+        "--device", default=None, help="Device for attack evaluation (e.g. cuda, cpu)"
+    )
 
     # benchmark
     bench_parser = subparsers.add_parser("benchmark", help="Run robustness benchmarks")
@@ -562,6 +798,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench_parser.add_argument("--model", default="distilbert-base-uncased")
     bench_parser.add_argument("--config", help="YAML config path for ensemble benchmarking")
     bench_parser.add_argument("--output", help="Output directory for ensemble benchmark results")
+    bench_parser.add_argument(
+        "--no-cache", action="store_true", help="Force re-evaluation without using cache"
+    )
 
     # distort
     distort_parser = subparsers.add_parser("distort", help="Apply distortion to text")
@@ -600,9 +839,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_parser.add_argument("--model", required=True, help="Path to the trained model")
     register_parser.add_argument("--name", required=True, help="Name for the foundation model")
 
-    _ = foundation_subparsers.add_parser(
-        "list", help="List registered foundation models"
-    )
+    _ = foundation_subparsers.add_parser("list", help="List registered foundation models")
 
     # transfer
     transfer_parser = subparsers.add_parser(
@@ -616,6 +853,68 @@ def build_parser() -> argparse.ArgumentParser:
     transfer_parser.add_argument("--transferred", help="Path to transferred evaluation JSON")
     transfer_parser.add_argument("--baseline", help="Path to baseline evaluation JSON")
 
+    # optimize command parsing mapping
+    optimize_parser = subparsers.add_parser(
+        "optimize", help="Run hyperparameter optimization via Optuna"
+    )
+    optimize_parser.add_argument("--config", required=True, help="YAML config path")
+    optimize_parser.add_argument(
+        "--n-trials",
+        type=int,
+        help="Override the number of optimization trials.",
+    )
+
+    # push command parsing mapping
+    push_parser = subparsers.add_parser(
+        "push", help="Upload a hardened model directory to HuggingFace Hub"
+    )
+    push_parser.add_argument(
+        "--model", required=True, help="Path to local trained checkpoint directory"
+    )
+    push_parser.add_argument(
+        "--hub", required=True, help="Target HuggingFace repository destination space (org/repo)"
+    )
+    push_parser.add_argument(
+        "--metadata", help="Optional path to training log metadata file (YAML)"
+    )
+
+    # pull command parsing mapping
+    pull_parser = subparsers.add_parser(
+        "pull", help="Download a pre-hardened model snapshot layout locally"
+    )
+    pull_parser.add_argument(
+        "--repo", required=True, help="Target HuggingFace source space handle (org/repo)"
+    )
+    pull_parser.add_argument(
+        "--output",
+        required=True,
+        help="Target output directory vector to write weights artifacts into",
+    )
+
+    # export command
+    export_parser = subparsers.add_parser(
+        "export", help="Export a model to ONNX or TorchScript for production deployment"
+    )
+    export_parser.add_argument(
+        "--format",
+        required=True,
+        choices=["onnx", "torchscript"],
+        help="Export format",
+    )
+    export_parser.add_argument(
+        "--checkpoint", required=True, help="Path to local trained checkpoint directory"
+    )
+    export_parser.add_argument("--output", required=True, help="Target output file path")
+    export_parser.add_argument(
+        "--model", help="Base model name/path (if checkpoint lacks config.json)"
+    )
+    export_parser.add_argument(
+        "--task",
+        default="seq_classification",
+        choices=["seq_classification", "causal_lm", "masked_lm"],
+        help="Model task architecture",
+    )
+
     return parser
 
 
@@ -627,6 +926,19 @@ def main(argv: Optional[list] = None) -> int:
         parser.print_help()
         return 0
 
+    # Set up logging based on verbosity flags
+    # Disable console logging for evaluate --json to avoid contaminating JSON output
+    json_mode = args.command == "evaluate" and getattr(args, "json", False)
+    log_level = "INFO"
+    if getattr(args, "verbose", False):
+        log_level = "DEBUG"
+    elif getattr(args, "quiet", False):
+        log_level = "ERROR"
+
+    from nightmarenet.utils.logging_config import setup_logging
+
+    setup_logging(log_level=log_level, console=not json_mode, file_logging=False)
+
     commands = {
         "train": cmd_train,
         "evaluate": cmd_evaluate,
@@ -634,6 +946,10 @@ def main(argv: Optional[list] = None) -> int:
         "distort": cmd_distort,
         "foundation": cmd_foundation,
         "transfer": cmd_transfer,
+        "push": cmd_push,
+        "pull": cmd_pull,
+        "export": cmd_export,
+        "optimize": cmd_optimize,
     }
 
     return commands[args.command](args)
