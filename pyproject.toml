@@ -105,6 +105,9 @@ export = [
     "onnx>=1.14.0",
     "onnxruntime>=1.16.0"
 ]
+art = [
+    "adversarial-robustness-toolbox>=1.15.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/Adit-Jain-srm/NightmareNet"
