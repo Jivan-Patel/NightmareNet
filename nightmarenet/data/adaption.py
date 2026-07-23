@@ -22,17 +22,17 @@ logger = logging.getLogger(__name__)
 try:
     from adaption import Adaption
 except ImportError:
-    Adaption = None
+    Adaption = None  # type: ignore[assignment,misc]
 
 try:
     from adaption import AsyncAdaption
 except ImportError:
-    AsyncAdaption = None
+    AsyncAdaption = None  # type: ignore[assignment,misc]
 
 try:
     from adaption import DatasetTimeout
 except ImportError:
-    DatasetTimeout = None
+    DatasetTimeout = None  # type: ignore[assignment,misc]
 
 try:
     from datasets import Dataset as HFDataset
